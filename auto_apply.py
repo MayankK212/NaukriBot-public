@@ -17,6 +17,8 @@ except Exception:
 
 # Database functions
 from database import _get_db_objects, get_resume_data, job_fingerprint
+# Shared location logic (keeps scraper + apply consistent)
+from scraper import _get_locations, _matches_location
 from browser_setup import launch_browser, new_context
 
 load_dotenv()
@@ -1100,6 +1102,26 @@ def run_interactive_apply(interactive=True):
 
     if not pending_jobs:
         print("😴 No pending jobs to apply. Run scraper first!")
+        return results
+
+    # Location filter (defense-in-depth): never apply to a job outside the
+    # preferred locations — even if older/unfiltered jobs are still in the DB.
+    preferred_locs = [l for l in _get_locations(user_profile) if l]
+    if preferred_locs:
+        keep, drop = [], []
+        for j in pending_jobs:
+            (keep if _matches_location(j.get("location"), preferred_locs) else drop).append(j)
+        for j in drop:
+            pending_collection.update_one(
+                {"_id": j["_id"]}, {"$set": {"status": "location_mismatch"}}
+            )
+        if drop:
+            print(f"🧭 Location filter: skipped {len(drop)} out-of-location jobs "
+                  f"(preferred: {preferred_locs}).")
+        pending_jobs = keep
+
+    if not pending_jobs:
+        print("😴 No pending jobs match your preferred locations.")
         return results
 
     print(f"📋 Found {len(pending_jobs)} pending jobs to process.")
