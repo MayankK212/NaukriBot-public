@@ -243,14 +243,59 @@ def _extract_salary(job):
     return None
 
 
-def _matches_location(location_text):
-    # text = _normalize_text(location_text)
-    # if not text:
-    #     return False
+# City aliases so different spellings match the same place.
+_CITY_ALIASES = {
+    "gurgaon": {"gurgaon", "gurugram"},
+    "gurugram": {"gurgaon", "gurugram"},
+    "bangalore": {"bangalore", "bengaluru"},
+    "bengaluru": {"bangalore", "bengaluru"},
+    "mumbai": {"mumbai", "bombay", "navi mumbai"},
+    "delhi": {"delhi", "new delhi"},
+    "new delhi": {"delhi", "new delhi"},
+}
+_NCR_CITIES = {"noida", "greater noida", "gurgaon", "gurugram",
+               "ghaziabad", "faridabad", "delhi", "new delhi"}
+_REMOTE_TERMS = ("remote", "work from home", "wfh", "anywhere")
 
-    # preferred_keywords = ["noida", "gurgaon", "greater noida", "remote", "work from home", "wfh"]
-    # return any(keyword in text for keyword in preferred_keywords)
-    return True
+
+def _matches_location(location_text, preferred=None):
+    """
+    True if the job's location matches ANY preferred location.
+
+    Naukri often lists several cities in one string ("Noida, Bengaluru,
+    Hyderabad" or "Gurgaon/Remote"), so we do a token/substring match instead
+    of an exact compare. Handles city aliases (Gurgaon=Gurugram,
+    Bangalore=Bengaluru), Remote/WFH, and broad "Delhi NCR" preferences.
+    """
+    if not preferred:
+        return True                      # no preference set → keep everything
+    jl = _normalize_text(location_text)
+    if not jl:
+        return True                      # unknown location → don't drop the job
+
+    for pref in preferred:
+        pl = _normalize_text(pref)
+        if not pl:
+            continue
+        # Remote preference
+        if pl in ("remote", "work from home", "wfh"):
+            if any(term in jl for term in _REMOTE_TERMS):
+                return True
+            continue
+        # Broad NCR preference → match any NCR city
+        if "ncr" in pl:
+            if "ncr" in jl or any(city in jl for city in _NCR_CITIES):
+                return True
+            continue
+        # Preferred is a specific NCR city → also match broad "NCR"/"Delhi NCR"
+        # listings (the region includes that city).
+        if pl in _NCR_CITIES and "ncr" in jl:
+            return True
+        # Specific city (with spelling aliases)
+        for variant in _CITY_ALIASES.get(pl, {pl}):
+            if variant in jl:
+                return True
+    return False
 
 
 DEBUG_DIR = Path(__file__).with_name("debug")
@@ -400,6 +445,8 @@ def scrape_naukri(roles=None, max_pages=10, max_jobs_per_role=10):
         job_list = []
         seen_links = set()   # de-dup within this scrape run too
         seen_fps = set()
+        # Real preferred locations (drop the None placeholder) for filtering.
+        preferred_locs = [l for l in locations if l]
 
         # ---- Search each role × location, deduping across all of them ----
         for role in search_roles:
@@ -435,6 +482,15 @@ def scrape_naukri(roles=None, max_pages=10, max_jobs_per_role=10):
                             break
                         continue
                     empty_pages = 0
+
+                    # Client-side location filter: keep only jobs whose (often
+                    # multi-city) location matches ANY preferred location.
+                    if preferred_locs:
+                        kept = [j for j in page_jobs
+                                if _matches_location(j.get("location"), preferred_locs)]
+                        if len(kept) != len(page_jobs):
+                            print(f"      🧭 location filter: kept {len(kept)}/{len(page_jobs)}")
+                        page_jobs = kept
 
                     new_on_page = 0
                     for job in page_jobs:
