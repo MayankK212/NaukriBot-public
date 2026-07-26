@@ -4,12 +4,10 @@ name: JobBot Daily
 # The ONE trick: Naukri (Akamai) blocks HEADLESS browsers, so we run REAL Google
 # Chrome, headed, under Xvfb (a virtual display). That alone passes; GitHub's
 # datacenter IP is fine with a real browser.
-# Template repo: schedule is commented out so a fork without secrets doesn't fail
-# daily. After you add your secrets (see README), uncomment the schedule below.
 "on":
   workflow_dispatch: {}
-  # schedule:
-  #   - cron: "0 3 * * *"      # 08:30 IST (03:00 UTC)
+  schedule:
+    - cron: "0 3 * * *"      # 08:30 IST (03:00 UTC)
 
 concurrency:
   group: jobbot-daily

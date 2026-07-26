@@ -9,6 +9,7 @@
   "notice_period": "30 days",
   "current_location": "Bengaluru",
   "relocation_preference": "Yes",
+  "preferred_locations": ["Bengaluru", "Remote"],
   "skills": ["SQL", "Python", "Excel", "Power BI"],
   "graduation_year": 2021,
   "highest_education": "B.Tech",

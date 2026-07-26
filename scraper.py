@@ -83,19 +83,52 @@ def _get_search_roles(resume):
     return roles
 
 
-def _build_search_url(role, page_no=1):
+def _get_locations(resume):
     """
-    Builds a Naukri search URL for a single role/keyword. Naukri paginates via
-    the SEO pattern '<slug>-jobs-<n>' (page 1 is just '<slug>-jobs'), so
-    navigating directly to each page URL is more reliable than clicking 'Next'.
+    Locations to search in. Priority: resume['preferred_locations'] (list),
+    else [current_location], else [None] (no location filter).
+    """
+    prefs = resume.get("preferred_locations")
+    if isinstance(prefs, list) and any(str(l).strip() for l in prefs):
+        return [str(l).strip() for l in prefs if str(l).strip()]
+    current = (resume.get("current_location") or "").strip()
+    return [current] if current else [None]
+
+
+def _get_experience(resume):
+    """Years of experience as an int for Naukri's `experience` filter, or None."""
+    try:
+        return int(float(str(resume.get("experience_years")).split()[0]))
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_search_url(role, page_no=1, location=None, experience=None):
+    """
+    Builds a Naukri search URL for a role, optionally filtered by location and
+    experience. Naukri patterns:
+      role only        -> /<role>-jobs
+      role + location  -> /<role>-jobs-in-<city>
+      pagination       -> append '-<n>'
+      experience       -> ?experience=<years>
+      freshness sort   -> ?sort=f (newest first)
     """
     slug = _slugify(role)
-    base = (f"https://www.naukri.com/{slug}-jobs" if slug
-            else "https://www.naukri.com/jobs-in-india")
+    loc_slug = _slugify(location) if location else ""
+    if slug and loc_slug:
+        base = f"https://www.naukri.com/{slug}-jobs-in-{loc_slug}"
+    elif slug:
+        base = f"https://www.naukri.com/{slug}-jobs"
+    elif loc_slug:
+        base = f"https://www.naukri.com/jobs-in-{loc_slug}"
+    else:
+        base = "https://www.naukri.com/jobs-in-india"
     if page_no > 1:
         base = f"{base}-{page_no}"
-    # sort=f → Naukri's "Freshness" (Date) sort: newest postings first.
-    return f"{base}?sort=f"
+    params = ["sort=f"]
+    if experience is not None and str(experience).strip() != "":
+        params.append(f"experience={experience}")
+    return f"{base}?" + "&".join(params)
 
 
 def _normalize_text(text):
@@ -331,7 +364,10 @@ def scrape_naukri(roles=None, max_pages=10, max_jobs_per_role=10):
         raise RuntimeError("No resume data found. Parse a resume first.")
 
     search_roles = roles if roles else _get_search_roles(resume)
-    print(f"Searching Naukri for {len(search_roles)} roles: {search_roles}")
+    locations = _get_locations(resume)
+    experience = _get_experience(resume)
+    print(f"Searching Naukri | roles={search_roles} | "
+          f"locations={locations} | experience={experience}")
 
     with sync_playwright() as p:
         browser = launch_browser(p)
@@ -365,61 +401,64 @@ def scrape_naukri(roles=None, max_pages=10, max_jobs_per_role=10):
         seen_links = set()   # de-dup within this scrape run too
         seen_fps = set()
 
-        # ---- Search each role independently, deduping across all of them ----
+        # ---- Search each role × location, deduping across all of them ----
         for role in search_roles:
-            print(f"\n🎯 Role: {role}")
-            role_count = 0
-            empty_pages = 0
-
-            for page_number in range(1, max_pages + 1):
-                if role_count >= max_jobs_per_role:
-                    break
-
-                page_url = _build_search_url(role, page_number)
-                print(f"   → Page {page_number}: {page_url}")
-                if not _safe_go_to(page, page_url):
-                    print(f"      ⚠️ Could not load page {page_number}, next role.")
-                    break
-
-                # Wait for job cards to render (SPA), fall back to a fixed wait.
-                try:
-                    page.wait_for_selector("div.srp-jobtuple-wrapper, article",
-                                           timeout=20000)
-                except Exception:
-                    page.wait_for_timeout(4000)
-
-                page_jobs = _extract_jobs_from_page(page)
-                if not page_jobs:
-                    _diagnose_empty_page(page, role, page_number)
-                    empty_pages += 1
-                    if empty_pages >= 2:
-                        print("      ℹ️ No more listings for this role.")
-                        break
-                    continue
+            for location in locations:
+                where = location or "anywhere"
+                print(f"\n🎯 Role: {role} | 📍 {where} | exp={experience}")
+                combo_count = 0
                 empty_pages = 0
 
-                new_on_page = 0
-                for job in page_jobs:
-                    link = job.get("link")
-                    fp = job_fingerprint(job)
-                    # Skip if link OR content fingerprint already exists
-                    # anywhere, or was already collected in this run.
-                    if link and (link in existing_links or link in seen_links):
-                        continue
-                    if fp in existing_fps or fp in seen_fps:
-                        continue
-                    if link:
-                        seen_links.add(link)
-                    seen_fps.add(fp)
-                    job["search_role"] = role  # which query surfaced this job
-                    job_list.append(job)
-                    new_on_page += 1
-                    role_count += 1
-                    if role_count >= max_jobs_per_role:
+                for page_number in range(1, max_pages + 1):
+                    if combo_count >= max_jobs_per_role:
                         break
 
-                print(f"      ✓ {new_on_page} new / {len(page_jobs)} on page "
-                      f"({role_count}/{max_jobs_per_role} for this role)")
+                    page_url = _build_search_url(role, page_number, location, experience)
+                    print(f"   → Page {page_number}: {page_url}")
+                    if not _safe_go_to(page, page_url):
+                        print(f"      ⚠️ Could not load page {page_number}, next combo.")
+                        break
+
+                    # Wait for job cards to render (SPA), fall back to a fixed wait.
+                    try:
+                        page.wait_for_selector("div.srp-jobtuple-wrapper, article",
+                                               timeout=20000)
+                    except Exception:
+                        page.wait_for_timeout(4000)
+
+                    page_jobs = _extract_jobs_from_page(page)
+                    if not page_jobs:
+                        _diagnose_empty_page(page, role, page_number)
+                        empty_pages += 1
+                        if empty_pages >= 2:
+                            print(f"      ℹ️ No more listings for {role} in {where}.")
+                            break
+                        continue
+                    empty_pages = 0
+
+                    new_on_page = 0
+                    for job in page_jobs:
+                        link = job.get("link")
+                        fp = job_fingerprint(job)
+                        # Skip if link OR content fingerprint already exists
+                        # anywhere, or was already collected in this run.
+                        if link and (link in existing_links or link in seen_links):
+                            continue
+                        if fp in existing_fps or fp in seen_fps:
+                            continue
+                        if link:
+                            seen_links.add(link)
+                        seen_fps.add(fp)
+                        job["search_role"] = role       # which query surfaced this job
+                        job["search_location"] = location
+                        job_list.append(job)
+                        new_on_page += 1
+                        combo_count += 1
+                        if combo_count >= max_jobs_per_role:
+                            break
+
+                    print(f"      ✓ {new_on_page} new / {len(page_jobs)} on page "
+                          f"({combo_count}/{max_jobs_per_role} for this role+location)")
 
         # Safety net: even though sort=f orders server-side, re-sort locally
         # by posting freshness (newest first) before saving.
