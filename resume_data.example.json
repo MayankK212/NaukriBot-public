@@ -1,0 +1,19 @@
+{
+  "full_name": "Your Name",
+  "email": "your.email@example.com",
+  "current_role": "Data Analyst",
+  "search_roles": ["Data Analyst", "Business Analyst"],
+  "experience_years": 3,
+  "current_ctc": "10 LPA",
+  "expected_ctc": "15 LPA",
+  "notice_period": "30 days",
+  "current_location": "Bengaluru",
+  "relocation_preference": "Yes",
+  "skills": ["SQL", "Python", "Excel", "Power BI"],
+  "graduation_year": 2021,
+  "highest_education": "B.Tech",
+  "ug_degree": "B.Tech",
+  "date_of_birth": "DD/MM/YYYY",
+  "languages": ["English", "Hindi"],
+  "communication_skills_scale_of_10": 8
+}

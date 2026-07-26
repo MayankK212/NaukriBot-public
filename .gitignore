@@ -1,0 +1,18 @@
+# ---- SECRETS / PERSONAL: never commit these ----
+.env
+cookies.json
+resume_data.json          # your real profile (use resume_data.example.json as template)
+my_resume.pdf
+*.pdf
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# IDE
+.vs/
+
+# Local run artifacts
+debug/
+applied_jobs.json
