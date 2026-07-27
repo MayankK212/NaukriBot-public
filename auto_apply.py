@@ -339,7 +339,21 @@ class NaukriInteractiveApplier:
         elif has_skill and not asks_count:
             guess = "Yes"
         elif any(k in q for k in ("year", "experience", "exp ")):
-            guess = num(p.get("experience_years", 3), 3)
+            # "How many years of experience in <X>?" — claim total experience
+            # ONLY when <X> is a skill you actually have, OR it's a general/
+            # total-experience question. If it asks about a skill you DON'T
+            # have, don't guess a number — flag it so the whole job is skipped
+            # (you shouldn't apply to jobs needing skills you lack).
+            generic_exp = any(g in q for g in (
+                "total", "overall", "this field", "relevant",
+                "work experience", "professional",
+            ))
+            asks_about_specific = (" in " in q) or (" with " in q)
+            if asks_about_specific and not has_skill and not generic_exp:
+                guess = ""              # unknown skill → no number
+                matched_intent = False  # → not confident → job flagged & skipped
+            else:
+                guess = num(p.get("experience_years", 3), 3)
         elif any(k in q for k in ("rate", "scale of", "out of 10", "score")):
             # "Rate your communication skills on the scale of 10" etc.
             if "communicat" in q and p.get("communication_skills_scale_of_10"):
