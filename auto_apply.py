@@ -303,12 +303,19 @@ class NaukriInteractiveApplier:
             except Exception:
                 return str(v or default)
 
-        # A city/location PICK (e.g. "select the city you reside in / relocate
-        # to") must be treated as a location match, NOT a yes/no relocation Q.
-        location_pick = (
-            any(k in q for k in ("city", "location", "reside", "residing", "based in"))
-            or ("relocat" in q and any(k in q for k in ("select", "which", "city", "choose")))
-        )
+        # City SELECTION — pick a city from a list ("select the city / which
+        # city / preferred location"). Needs a real location value.
+        city_selection = any(k in q for k in (
+            "which city", "select the city", "select city", "choose your",
+            "choose the", "preferred location", "preferred city",
+            "which location", "current city", "base location", "job location",
+        ))
+        # Residency / relocation YES-NO — "Are you residing in X / willing to
+        # relocate to X?" → always Yes (open to any location). NOT a city pick.
+        residency_q = (not city_selection) and any(k in q for k in (
+            "reside", "residing", "relocat", "willing to move",
+            "currently living", "currently based", "comfortable relocating",
+        ))
 
         langs = [str(l).lower() for l in (p.get("languages") or [])]
         has_skill = any(str(sk).lower() in q for sk in p.get("skills", []))
@@ -364,10 +371,11 @@ class NaukriInteractiveApplier:
             guess = str(p.get("current_ctc", "Negotiable"))
         elif any(k in q for k in ("expected", "ctc", "salary", "package", "lpa")):
             guess = str(p.get("expected_ctc", "Negotiable"))
-        elif location_pick:
+        elif city_selection:
             guess = str(p.get("location") or p.get("current_location") or "Noida")
-        elif "relocat" in q or "willing to move" in q:
-            guess = str(p.get("relocation_preference", "Yes"))
+        elif residency_q:
+            # Residing here OR willing to relocate → always Yes.
+            guess = "Yes"
         # Language comfort ("Are you comfortable with English?").
         elif any(lang in q for lang in langs) or ("english" in q and "english" in langs):
             guess = "Yes"
@@ -388,8 +396,8 @@ class NaukriInteractiveApplier:
 
         # ---- For choice widgets, snap the guess to a real option ----
         if is_choice and option_texts:
-            # Location questions get NCR/region-aware matching.
-            if location_pick:
+            # City-selection questions get NCR/region-aware matching.
+            if city_selection:
                 loc_match = self._match_location_option(option_texts)
                 if loc_match:
                     return loc_match, True
