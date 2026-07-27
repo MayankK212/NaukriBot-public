@@ -7,7 +7,12 @@ name: JobBot Daily
 "on":
   workflow_dispatch: {}
   schedule:
-    - cron: "0 3 * * *"      # 08:30 IST (03:00 UTC)
+    # GitHub cron is best-effort: on-the-hour times (0 min) sit in a huge global
+    # queue and get delayed or skipped. Odd minutes are far more reliable, and a
+    # second run acts as a catch-up if the first is skipped. (Dedup means the
+    # backup won't re-apply anything already done.)
+    - cron: "23 3 * * *"     # ~08:53 IST (primary)
+    - cron: "23 6 * * *"     # ~11:53 IST (backup / catch-up)
 
 concurrency:
   group: jobbot-daily
