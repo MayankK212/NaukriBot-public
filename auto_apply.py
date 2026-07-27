@@ -341,6 +341,8 @@ class NaukriInteractiveApplier:
         # Date of birth.
         elif any(k in q for k in ("date of birth", "dob", "birth date", "born")):
             guess = str(p.get("date_of_birth") or "")
+        elif "passport" in q:
+            guess = str(p.get("passport") or "Yes")
         # Skill-possession (Yes/No): "Do you have experience with <skill>?" —
         # only when it's NOT asking for a number of years.
         elif has_skill and not asks_count:
