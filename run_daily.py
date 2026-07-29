@@ -52,9 +52,16 @@ def main():
         print("[apply] FAILED:")
         traceback.print_exc()
 
-    # ---- Step 3: email report (always, even if steps above partially failed) ----
+    # ---- Step 3: email report ----
+    # Only email when there's something to report. This lets us schedule several
+    # morning attempts (so at least one beats GitHub's cron delays) WITHOUT
+    # spamming: the first run that does the work emails; later same-day runs
+    # find nothing new and stay silent.
     try:
-        send_status_email(results, scraped_count=scraped_count)
+        if results or scraped_count:
+            send_status_email(results, scraped_count=scraped_count)
+        else:
+            print("[email] Nothing to report (0 scraped, 0 processed) — skipping email.")
     except Exception:
         print("[email] FAILED:")
         traceback.print_exc()
