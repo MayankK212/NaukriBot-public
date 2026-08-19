@@ -1,0 +1,22 @@
+# ============================================================
+# Render.com Blueprint — JobBot Dashboard (read-only, online
+# for recruiters). Deploy via: render.com -> New+ -> Blueprint
+# -> select this repo. Render reads this file automatically.
+#
+# SECRET: MONGO_URI is NOT in this file. Render creates the
+# env var (sync: false) and YOU paste the value in the Render
+# dashboard after deploy. Copy it from D:\JobBot\.env.
+# ============================================================
+services:
+  - type: web
+    name: jobbot-dashboard
+    runtime: python
+    plan: free
+    rootDir: dashboard
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 90
+    envVars:
+      - key: MONGO_URI
+        sync: false          # secret — fill value in Render dashboard
+      - key: MONGO_DB_NAME
+        value: JobPortalBot

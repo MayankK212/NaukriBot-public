@@ -1,0 +1,22 @@
+// ============================================================
+// JobBot Dashboard - DAX MEASURES (paste-ready)
+// ------------------------------------------------------------
+// Power BI Desktop -> Model view -> right-click your table in
+// the Fields pane (e.g. "StatusNow") -> "New measure" -> paste
+// one of these. Repeat for each. Each measure's Format: Number,
+// 0 decimals.
+// ============================================================
+
+// --- all-time counts (from StatusNow) ---
+Total Applied   = CALCULATE(SUM(StatusNow[count]), StatusNow[status] = "Applied")
+Pending         = CALCULATE(SUM(StatusNow[count]), StatusNow[status] = "pending")
+Needs Review    = CALCULATE(SUM(StatusNow[count]), StatusNow[status] = "needs_review")
+Apply Manually  = CALCULATE(SUM(StatusNow[count]), StatusNow[status] = "Apply Manually")
+
+// --- per-day series ---
+Applied Today   = CALCULATE(SUM(DailyApplied[applied]), Calendar[Date] = TODAY())
+Applied Per Day = SUM(DailyApplied[applied])
+Scraped Per Day = SUM(DailyScraped[scraped])
+Flagged Per Day = SUM(DailyFlagged[flagged])
+
+// --- all other tables are already plain columns, no measures needed ---

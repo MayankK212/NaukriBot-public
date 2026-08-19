@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
 from pymongo import MongoClient
@@ -29,6 +30,39 @@ LOCAL_STORAGE_PATH = Path(__file__).with_name("resume_data.json")
 client = None
 db = None
 resume_collection = None
+
+def record_daily_stats(fields):
+    """
+    Accumulates today's run counters into the `daily_stats` collection (one doc
+    per date, `$inc` into today's doc). This is the funnel data source for the
+    Power BI dashboard (jobs seen / scraped / applied / errors per day).
+
+    fields: {"seen": 12, "relevance_dropped": 5, "applied": 50, ...}
+    Best-effort: never raises (a logging hiccup must not fail the pipeline).
+    """
+    ints = {k: int(v) for k, v in (fields or {}).items() if isinstance(v, int) and v}
+    if not ints:
+        return
+    try:
+        _get_db_objects()
+        today = datetime.now().strftime("%Y-%m-%d")
+        # Seed EVERY funnel column to 0 on insert. daily_stats docs can otherwise
+        # be PARTIAL (scraper $incs seen/new_raw/... before the apply phase $incs
+        # applied/errors/...), and `$inc` with a 0 is a no-op that never creates a
+        # field — so an apply-phase call with all-zero counts would leave the doc
+        # permanently missing those columns, which crashes the dashboard funnel
+        # (mongo_queries.table_daily_funnel selects fixed columns).
+        _FUNNEL_COLS = ("seen", "new_raw", "relevance_dropped", "scraped",
+                        "applied", "apply_errors", "needs_review", "manual")
+        db["daily_stats"].update_one(
+            {"date": today},
+            {"$inc": ints,
+             "$setOnInsert": {"date": today, **{c: 0 for c in _FUNNEL_COLS}}},
+            upsert=True,
+        )
+    except Exception:
+        pass
+
 
 def _get_db_objects():
     global client, db, resume_collection

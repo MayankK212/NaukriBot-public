@@ -20,6 +20,7 @@ from database import _get_db_objects, get_resume_data, job_fingerprint
 # Shared location logic (keeps scraper + apply consistent)
 from scraper import _get_locations, _matches_location
 from browser_setup import launch_browser, new_context
+from llm_answers import GeminiAnswerer
 
 load_dotenv()
 
@@ -124,11 +125,14 @@ class NaukriInteractiveApplier:
     MAX_QUESTIONS = 25          # safety cap against infinite loops
     NEW_Q_TIMEOUT = 1200       # ms to wait for the next bot bubble
 
-    def __init__(self, page, user_profile, interactive=True):
+    def __init__(self, page, user_profile, interactive=True, llm_answerer=None):
         self.page = page
         self.profile = user_profile or {}
         # interactive=False → fully unattended: no prompts, auto-submit.
         self.interactive = interactive
+        # LLM answerer (GeminiAnswerer) for screening questions. None → every
+        # question is flagged needs_review (never guessed).
+        self.llm = llm_answerer
 
     # ---------------------------------------------------------------
     # DEBUG
@@ -157,7 +161,7 @@ class NaukriInteractiveApplier:
     # ---------------------------------------------------------------
     # DETECTION
     # ---------------------------------------------------------------
-    def wait_for_drawer(self, page, timeout=20000):
+    def wait_for_drawer(self, page, timeout=8000):
         """
         Waits for the side drawer to actually render its first bubble.
         Handles the slow/intermediate-screen case by waiting for the
@@ -288,203 +292,18 @@ class NaukriInteractiveApplier:
     # ---------------------------------------------------------------
     def suggest_answer(self, question, mode, option_texts):
         """
-        Maps the question text to a value from resume_data.json.
-        Returns (answer, confident): `confident` is True only when the answer
-        came from a real profile-based intent match (not a blind default).
-        Unattended mode uses `confident` to decide whether to submit or skip.
+        Answers the screening question via the LLM (GeminiAnswerer).
+        Returns (answer, confident). The if-then rule set was removed — every
+        question is answered analytically from the profile + options.
+        confident is True only when the LLM returned a validated
+        high/medium-confidence answer. Unattended mode uses `confident` to
+        decide whether to submit or skip: anything unsure is flagged for
+        manual review (never guessed).
         """
-        q = (question or "").lower()
-        p = self.profile
-        is_choice = mode in ("single_choice", "multi_choice")
-
-        def num(v, default):
-            try:
-                return str(int(float(str(v).split()[0])))
-            except Exception:
-                return str(v or default)
-
-        # City SELECTION — pick a city from a list ("select the city / which
-        # city / preferred location"). Needs a real location value.
-        city_selection = any(k in q for k in (
-            "which city", "select the city", "select city", "choose your",
-            "choose the", "preferred location", "preferred city",
-            "which location", "current city", "base location", "job location",
-        ))
-        # Residency / relocation YES-NO — "Are you residing in X / willing to
-        # relocate to X?" → always Yes (open to any location). NOT a city pick.
-        residency_q = (not city_selection) and any(k in q for k in (
-            "reside", "residing", "relocat", "willing to move",
-            "currently living", "currently based", "comfortable relocating",
-        ))
-
-        langs = [str(l).lower() for l in (p.get("languages") or [])]
-        has_skill = any(str(sk).lower() in q for sk in p.get("skills", []))
-        # "how many years..." asks for a COUNT; "do you have experience with X"
-        # is a yes/no skill-possession question.
-        asks_count = ("how many" in q) or ("years" in q) or ("no. of year" in q)
-
-        # ---- Value pick based on intent ----
-        # NOTE: to answer a NEW kind of question you must add BOTH a key in
-        # resume_data.json AND a rule here that maps the question wording to it.
-        matched_intent = True
-        if "notice" in q:
-            guess = str(p.get("notice_period", "Immediate"))
-        # Graduation YEAR — must come BEFORE the generic "year"→experience rule.
-        elif "graduat" in q and ("year" in q or "pass" in q):
-            guess = str(p.get("graduation_year") or "")
-        # Degree / qualification name.
-        elif "highest" in q and any(k in q for k in ("education", "qualif", "degree")):
-            guess = str(p.get("highest_education") or "")
-        elif any(k in q for k in ("degree", "qualification", "b.tech", "btech",
-                                  "b.e.", "graduation degree", "under grad", "ug degree")):
-            guess = str(p.get("ug_degree") or p.get("highest_education") or "")
-        # Date of birth.
-        elif any(k in q for k in ("date of birth", "dob", "birth date", "born")):
-            guess = str(p.get("date_of_birth") or "")
-        elif "passport" in q:
-            guess = str(p.get("passport") or "Yes")
-        # Skill-possession (Yes/No): "Do you have experience with <skill>?" —
-        # only when it's NOT asking for a number of years.
-        elif has_skill and not asks_count:
-            guess = "Yes"
-        elif any(k in q for k in ("year", "experience", "exp ")):
-            # "How many years of experience in <X>?" — claim total experience
-            # ONLY when <X> is a skill you actually have, OR it's a general/
-            # total-experience question. If it asks about a skill you DON'T
-            # have, don't guess a number — flag it so the whole job is skipped
-            # (you shouldn't apply to jobs needing skills you lack).
-            generic_exp = any(g in q for g in (
-                "total", "overall", "this field", "relevant",
-                "work experience", "professional",
-            ))
-            asks_about_specific = (" in " in q) or (" with " in q)
-            if asks_about_specific and not has_skill and not generic_exp:
-                guess = ""              # unknown skill → no number
-                matched_intent = False  # → not confident → job flagged & skipped
-            else:
-                guess = num(p.get("experience_years", 3), 3)
-        elif any(k in q for k in ("rate", "scale of", "out of 10", "score")):
-            # "Rate your communication skills on the scale of 10" etc.
-            if "communicat" in q and p.get("communication_skills_scale_of_10"):
-                guess = str(p.get("communication_skills_scale_of_10"))
-            else:
-                guess = str(p.get("default_rating", "8"))
-        elif "current" in q and ("ctc" in q or "salary" in q or "package" in q):
-            guess = str(p.get("current_ctc", "Negotiable"))
-        elif any(k in q for k in ("expected", "ctc", "salary", "package", "lpa")):
-            guess = str(p.get("expected_ctc", "Negotiable"))
-        elif city_selection:
-            guess = str(p.get("location") or p.get("current_location") or "Noida")
-        elif residency_q:
-            # Residing here OR willing to relocate → always Yes.
-            guess = "Yes"
-        # Language comfort ("Are you comfortable with English?").
-        elif any(lang in q for lang in langs) or ("english" in q and "english" in langs):
-            guess = "Yes"
-        elif "name" in q:
-            guess = str(p.get("full_name", ""))
-        elif "email" in q:
-            guess = str(p.get("email", ""))
-        elif any(sk.lower() in q for sk in p.get("skills", [])):
-            guess = "Yes"
-        else:
-            # No profile intent matched → a blind default (low confidence).
-            guess = "Yes" if is_choice else ""
-            matched_intent = False
-
-        # A rule matched but the profile value is empty → not usable.
-        if matched_intent and not str(guess).strip():
-            matched_intent = False
-
-        # ---- For choice widgets, snap the guess to a real option ----
-        if is_choice and option_texts:
-            # City-selection questions get NCR/region-aware matching.
-            if city_selection:
-                loc_match = self._match_location_option(option_texts)
-                if loc_match:
-                    return loc_match, True
-            # Numeric answers (experience/years) → match by RANGE, so "6" picks
-            # "4-6" and never "12-14" (naive substring matched 14→'…4').
-            if re.fullmatch(r"\d+(?:\.\d+)?", str(guess).strip()):
-                rng = self._match_numeric_range(guess, option_texts)
-                if rng is not None:
-                    return rng, matched_intent
-            match = self._match_option(guess, option_texts)
-            if match is not None:
-                return match, matched_intent
-            # No real option matched → first *real* option is a blind guess.
-            first_real = self._first_real_option(option_texts)
-            return (first_real or guess), False
-
-        return guess, (matched_intent and bool(str(guess).strip()))
-
-    @staticmethod
-    def _match_numeric_range(value, option_texts):
-        """
-        Matches a number to a range/threshold option:
-          "6" → "4-6" or "6-8"; "6" → "5+"/"more than 5"; "6" → "less than 8".
-        Returns the matching option text, or None.
-        """
-        try:
-            target = float(str(value).strip())
-        except (TypeError, ValueError):
-            return None
-        for opt in option_texts:
-            low = opt.lower()
-            nums = [float(n) for n in re.findall(r"\d+(?:\.\d+)?", opt)]
-            if not nums:
-                continue
-            if len(nums) >= 2:                       # a range "a-b"
-                lo, hi = nums[0], nums[1]
-                if lo <= target <= hi:
-                    return opt
-            else:                                    # a single-number threshold
-                n = nums[0]
-                if any(w in low for w in ("+", "more", "above", "greater", "least", "min")):
-                    if target >= n:
-                        return opt
-                elif any(w in low for w in ("less", "below", "under", "max", "upto", "up to")):
-                    if target <= n:
-                        return opt
-                elif target == n:
-                    return opt
-        return None
-
-    @staticmethod
-    def _first_real_option(option_texts):
-        """First option that isn't a 'skip this question' style opt-out."""
-        for opt in option_texts:
-            if "skip" not in opt.strip().lower():
-                return opt
-        return option_texts[0] if option_texts else None
-
-    def _match_location_option(self, option_texts):
-        """
-        Matches the profile location to an option, with NCR/region awareness
-        (e.g. profile 'Noida' → option 'Delhi / NCR').
-        """
-        loc = str(self.profile.get("location")
-                  or self.profile.get("current_location") or "").strip().lower()
-        if not loc:
-            return None
-        # Direct/containment match first.
-        direct = self._match_option(loc, option_texts)
-        if direct:
-            return direct
-        # Delhi-NCR grouping.
-        ncr_cities = {
-            "noida", "greater noida", "gurgaon", "gurugram",
-            "ghaziabad", "faridabad", "delhi", "new delhi", "ncr",
-        }
-        if loc in ncr_cities or "ncr" in loc or "delhi" in loc:
-            for opt in option_texts:
-                if "ncr" in opt.lower():
-                    return opt
-            for opt in option_texts:
-                o = opt.lower()
-                if "delhi" in o and "skip" not in o:
-                    return opt
-        return None
+        if self.llm is not None:
+            return self.llm.suggest(question, mode, option_texts)
+        # No LLM configured → cannot answer confidently → flagged for review.
+        return "", False
 
     @staticmethod
     def _match_option(value, option_texts):
@@ -938,9 +757,13 @@ class NaukriInteractiveApplier:
         job_link = job_meta["link"]
         apply_page = self.page.context.new_page()
 
+        # Bound the LLM quota per job (covers drawer + plain-form questions).
+        if self.llm is not None:
+            self.llm.reset()
+
         try:
             apply_page.goto(job_link, wait_until="domcontentloaded", timeout=45000)
-            apply_page.wait_for_timeout(2500)
+            apply_page.wait_for_timeout(1500)
 
             # Already applied?
             already = apply_page.locator(
@@ -983,7 +806,7 @@ class NaukriInteractiveApplier:
                 return "skipped", {}
 
             apply_btn.click()
-            apply_page.wait_for_timeout(2500)
+            apply_page.wait_for_timeout(1500)
 
             # --- Apply error shown? Keep the job pending for a retry. ---
             if self.detect_apply_error(apply_page):
@@ -1090,21 +913,49 @@ class NaukriInteractiveApplier:
 # ==========================================
 # 🚀 SYSTEM INITIATOR
 # ==========================================
+def _status_reason(status, flagged_q=None):
+    """One-line 'why this job was NOT applied', for the daily email report.
+
+    Returns None for statuses where the application actually went through
+    (applied / already_applied) — the user doesn't need a reason for those."""
+    if status in ("applied", "already_applied"):
+        return None
+    reasons = {
+        "apply_manually": "Apply on company site (external redirect)",
+        "error": "Naukri apply error — will be retried next run",
+        "needs_review": "Hard screening question — needs manual review",
+        "user_rejected": "Skipped by user",
+        "skipped": "Apply button not found / external redirect required",
+        "incomplete": "Screening flow could not be completed",
+        "failed": "Browser/site error — will be retried",
+    }
+    reason = reasons.get(status)
+    if status == "needs_review" and flagged_q:
+        reason = f"{reason}: “{flagged_q}”"
+    return reason
+
+
 def run_interactive_apply(interactive=True):
     """
     Applies to all pending jobs. When interactive=False it runs fully
-    unattended (no prompts, auto-submit) and RETURNS a list of per-job
-    result dicts suitable for an email report.
+    unattended (no prompts, auto-submit).
+
+    RETURNS a tuple: (results, untouched)
+      - results:   per-job dicts (title/company/location/link/status/reason/
+                   review_question/questions_and_answers) for the email report.
+      - untouched: count of jobs left pending because of MAX_JOBS_PER_RUN,
+                   the apply time budget, or the Naukri daily-apply wall.
     """
     mode = "INTERACTIVE" if interactive else "UNATTENDED"
     print(f"🤖 Starting Naukri Auto-Apply Engine ({mode})...")
 
     results = []  # for the email report
+    untouched = 0  # jobs left pending (never touched) — reported in the email
 
     user_profile = get_resume_data()
     if not user_profile:
         print("❌ Critical: No active user profile data found.")
-        return results
+        return results, 0
 
     _, db, _ = _get_db_objects()
     pending_collection = db["pending_jobs"]
@@ -1119,14 +970,19 @@ def run_interactive_apply(interactive=True):
     local_applied_links = [j["link"] for j in load_local_applied_jobs()]
     all_applied_links = list(set(db_applied_links + local_applied_links))
 
+    # FIFO: process the OLDEST pending jobs first. The scraper APPENDS newly
+    # scraped jobs below whatever is already pending, so an ascending _id
+    # (insertion-time) sort drains the existing backlog before touching fresh
+    # jobs. status="pending" only — `needs_review`/`skipped`/`location_mismatch`
+    # rows are never auto-applied or deleted.
     pending_jobs = list(pending_collection.find({
         "status": "pending",
         "link": {"$nin": all_applied_links},
-    }))
+    }).sort("_id", 1))
 
     if not pending_jobs:
         print("😴 No pending jobs to apply. Run scraper first!")
-        return results
+        return results, 0
 
     # Location filter (defense-in-depth): never apply to a job outside the
     # preferred locations — even if older/unfiltered jobs are still in the DB.
@@ -1146,7 +1002,25 @@ def run_interactive_apply(interactive=True):
 
     if not pending_jobs:
         print("😴 No pending jobs match your preferred locations.")
-        return results
+        return results, 0
+
+    # Bound how many jobs a single run processes so it ALWAYS finishes inside
+    # the CI timeout (leftover pending jobs are processed on the next run —
+    # dedup prevents double-applying). Override with MAX_JOBS_PER_RUN=0 for all.
+    max_jobs = int(os.getenv("MAX_JOBS_PER_RUN", "200") or 0)
+    if max_jobs > 0 and len(pending_jobs) > max_jobs:
+        untouched += len(pending_jobs) - max_jobs
+        print(f"⏱️  Capping this run to {max_jobs} of {len(pending_jobs)} pending "
+              f"jobs; the rest stay pending for the next run.")
+        pending_jobs = pending_jobs[:max_jobs]
+
+    # Hard time budget for the APPLY phase. The workflow has its own timeout, but
+    # this guarantees the status email always goes out even if jobs run slow.
+    # Override with APPLY_TIME_BUDGET=0 for no limit.
+    apply_budget = int(os.getenv("APPLY_TIME_BUDGET", "2400") or 0)
+    if apply_budget:
+        print(f"⏱️  Apply phase budget: {apply_budget}s (then leftover jobs stay pending).")
+    apply_started = time.time()
 
     print(f"📋 Found {len(pending_jobs)} pending jobs to process.")
 
@@ -1161,7 +1035,19 @@ def run_interactive_apply(interactive=True):
             print("⚠️ Warning: cookies.json missing! Manual login may be required.")
 
         page = context.new_page()
-        applier = NaukriInteractiveApplier(page, user_profile, interactive=interactive)
+        llm = GeminiAnswerer(user_profile)
+        if not llm.enabled:
+            print("⚠️ GEMINI_API_KEY missing — all screening questions will be "
+                  "flagged needs_review (no rule fallback).")
+        applier = NaukriInteractiveApplier(page, user_profile, interactive=interactive,
+                                           llm_answerer=llm)
+
+        # Naukri free accounts cap daily SUBMITTED applications (~50). Once the
+        # cap is hit, every Apply errors ("There was an error while processing
+        # your request"). Detect the wall (N errors since the last successful
+        # apply) and stop early instead of hammering the site for the whole run.
+        errors_since_apply = 0
+        max_errors_since_apply = int(os.getenv("APPLY_STOP_ERRORS", "15") or 0)
 
         for idx, job in enumerate(pending_jobs, 1):
             print(f"\n==================== [JOB {idx}/{len(pending_jobs)}] ====================")
@@ -1173,13 +1059,26 @@ def run_interactive_apply(interactive=True):
 
             status, answers_logged = applier.apply_job_interactively(job)
 
-            # Record the outcome for the email report.
+            # Which screening question (if any) blocked this job — surfaced in
+            # the email so the user knows exactly WHAT needs manual review.
+            flagged_q = None
+            if status == "needs_review":
+                flagged_q = next(
+                    (q for q, a in (answers_logged or {}).items()
+                     if a == "[needs manual review]"),
+                    None) or (next(iter(answers_logged), None)
+                              if answers_logged else None)
+
+            # Record the outcome for the email report. reason = the one-line
+            # "why this job was NOT applied" (None when it WAS applied).
             results.append({
                 "title": job.get("title"),
                 "company": job.get("company"),
                 "location": job.get("location"),
                 "link": job.get("link"),
                 "status": status,
+                "reason": _status_reason(status, flagged_q),
+                "review_question": flagged_q,
                 "questions_and_answers": answers_logged or {},
             })
 
@@ -1192,6 +1091,7 @@ def run_interactive_apply(interactive=True):
                     "salary": job.get("salary"),
                     "rating": job.get("rating"),
                     "link": job.get("link"),
+                    "search_role": job.get("search_role"),
                     "fingerprint": job_fingerprint(job),
                     "applied_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "questions_and_answers": answers_logged,
@@ -1241,6 +1141,7 @@ def run_interactive_apply(interactive=True):
                     "rating": job.get("rating"),
                     "link": job.get("link"),
                     "fingerprint": job_fingerprint(job),
+                    "search_role": job.get("search_role"),
                     "flagged_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "status": "apply_manually",
                     "reason": "Apply on company site (external redirect)",
@@ -1276,6 +1177,7 @@ def run_interactive_apply(interactive=True):
                     "rating": job.get("rating"),
                     "link": job.get("link"),
                     "fingerprint": job_fingerprint(job),
+                    "search_role": job.get("search_role"),
                     "applied_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "status": "already_applied",
                     "questions_and_answers": {},
@@ -1308,29 +1210,61 @@ def run_interactive_apply(interactive=True):
             elif status == "error":
                 # Apply failed on the site → keep it pending so it's retried.
                 pending_collection.update_one(
-                    {"_id": job["_id"]}, {"$set": {"status": "pending"}}
+                    {"_id": job["_id"]},
+                    {"$set": {"status": "pending",
+                              "reason": "Naukri apply error — will be retried"}}
                 )
                 print("   🔁 Kept in 'pending_jobs' (status=pending) for retry.")
 
             elif status == "needs_review":
                 # Hard questions in unattended mode → left for the user to do
-                # manually. Marked so it won't be auto-retried blindly.
+                # manually. Marked so it won't be auto-retried blindly. Save the
+                # flagged question so the dashboard can show WHAT needs review.
                 pending_collection.update_one(
-                    {"_id": job["_id"]}, {"$set": {"status": "needs_review"}}
+                    {"_id": job["_id"]},
+                    {"$set": {"status": "needs_review",
+                              "review_question": flagged_q,
+                              "reason": "Hard screening question — needs manual review"}}
                 )
                 print("   🟡 Marked 'needs_review' in 'pending_jobs'.")
 
             else:
-                pending_collection.update_one(
-                    {"_id": job["_id"]}, {"$set": {"status": status}}
-                )
+                update = {"$set": {"status": status}}
+                if status == "skipped":
+                    update["$set"]["reason"] = \
+                        "Apply button not found / external redirect required"
+                pending_collection.update_one({"_id": job["_id"]}, update)
 
             time.sleep(1)
+
+            # Track Naukri's daily-apply wall: N consecutive errors since the
+            # last successful apply means the account is blocked for the day.
+            if status == "applied":
+                errors_since_apply = 0
+            elif status == "error":
+                errors_since_apply += 1
+                if max_errors_since_apply and errors_since_apply >= max_errors_since_apply:
+                    remaining = len(pending_jobs) - idx
+                    untouched += remaining
+                    print(f"\n🚧 {errors_since_apply} apply errors since the last successful "
+                          f"apply — Naukri is blocking submissions (daily application "
+                          f"limit reached?). Stopping early; {remaining} job(s) stay "
+                          f"pending for the next day.")
+                    break
+
+            # Stop when the apply budget is nearly exhausted, so the final email
+            # still goes out this run. Leftover jobs stay pending for next run.
+            if apply_budget and (time.time() - apply_started) >= apply_budget:
+                remaining = len(pending_jobs) - idx
+                untouched += remaining
+                print(f"\n⏱️  Apply budget ({apply_budget}s) reached after {idx} jobs — "
+                      f"leaving {remaining} job(s) pending for the next run.")
+                break
 
         print("\n🎉 Applying session completed!")
         browser.close()
 
-    return results
+    return results, untouched
 
 
 if __name__ == "__main__":

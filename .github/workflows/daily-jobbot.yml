@@ -4,16 +4,14 @@ name: JobBot Daily
 # The ONE trick: Naukri (Akamai) blocks HEADLESS browsers, so we run REAL Google
 # Chrome, headed, under Xvfb (a virtual display). That alone passes; GitHub's
 # datacenter IP is fine with a real browser.
+#
+# Triggering: EXTERNAL PINGER ONLY. GitHub cron is best-effort (fires hours
+# late) and Naukri blocks applies by then, so the schedule was REMOVED. The
+# only trigger is the external cron-job.org pinger firing workflow_dispatch
+# daily at 08:25 IST. If that ever stops, the bot goes silent — check
+# cron-job.org (your repo → daily-jobbot.yml dispatch job).
 "on":
   workflow_dispatch: {}
-  schedule:
-    # GitHub cron is best-effort (often delayed/skipped). Three attempts inside
-    # the 08:30–09:30 IST window so at least one lands there. run_daily only
-    # emails when there's something to report, so the extra attempts don't spam:
-    # whichever run does the work sends ONE email; the rest stay silent.
-    - cron: "55 2 * * *"     # ~08:25 IST
-    - cron: "15 3 * * *"     # ~08:45 IST
-    - cron: "35 3 * * *"     # ~09:05 IST
 
 concurrency:
   group: jobbot-daily
@@ -22,7 +20,9 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # The apply phase self-stops after ~40 min (APPLY_TIME_BUDGET) so the email
+    # always goes out; this is just the outer hard cap for slow/surprise days.
+    timeout-minutes: 90
 
     env:
       HEADLESS: "false"           # real Chrome, headed under Xvfb (not detected)
@@ -30,6 +30,12 @@ jobs:
       EMAIL_USER: ${{ secrets.EMAIL_USER }}
       EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_MODEL: gemini-flash-latest   # free-tier flash alias; 2.x named models 404 for new keys
+      # Resume <-> JD relevance gate (scraper). 0 disables matching entirely.
+      JD_MIN_MATCHED_SKILLS: "3"          # keep if >=3 profile skills in the JD, or >=1 + role match
+      JD_FETCH_DETAIL: "true"             # open each job page for the full JD (false = card snippet only)
+      JD_MAX_FETCHES: "60"                # cap on detail-page fetches per run
 
     steps:
       - name: Checkout repo

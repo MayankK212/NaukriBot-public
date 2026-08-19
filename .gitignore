@@ -16,3 +16,6 @@ __pycache__/
 # Local run artifacts
 debug/
 applied_jobs.json
+
+# Design reference screenshots (not part of the app / deployment)
+dashboard/designs/

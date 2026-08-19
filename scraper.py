@@ -1,12 +1,23 @@
 import json
+import os
 import re
 import sys
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from database import _get_db_objects, get_resume_data, job_fingerprint
+from database import _get_db_objects, get_resume_data, job_fingerprint, record_daily_stats
 from browser_setup import launch_browser, new_context
+from relevance import (
+    build_skill_matchers,
+    fetch_detail_enabled,
+    get_max_fetches,
+    get_min_skills,
+    matching_enabled,
+    role_keywords,
+    score_text,
+    should_keep,
+)
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -243,6 +254,45 @@ def _extract_salary(job):
     return None
 
 
+def _extract_description(job):
+    """Short JD snippet shown on a search-result card, if present."""
+    selectors = [
+        "div[class*='job-description']",
+        "div.job-desc",
+        "span.desc",
+        "span.job-desc",
+        "div[class*='job-desc']",
+        "div[class*='description']",
+    ]
+    for selector in selectors:
+        el = job.query_selector(selector)
+        if not el:
+            continue
+        text = _normalize_text(el.inner_text())
+        if text and len(text) > 20:
+            return text
+    return None
+
+
+def _extract_keyskills(job):
+    """Keyskills tag list on a search-result card, if present."""
+    selectors = [
+        "div[class*='keyskill'] span",
+        "span[class*='keyskill']",
+        "span[class*='keySkill']",
+        "a[class*='keySkill']",
+    ]
+    for selector in selectors:
+        texts = []
+        for el in job.query_selector_all(selector):
+            t = _normalize_text(el.inner_text())
+            if t:
+                texts.append(t)
+        if texts:
+            return " ".join(texts)
+    return None
+
+
 # City aliases so different spellings match the same place.
 _CITY_ALIASES = {
     "gurgaon": {"gurgaon", "gurugram"},
@@ -277,6 +327,13 @@ def _matches_location(location_text, preferred=None):
         pl = _normalize_text(pref)
         if not pl:
             continue
+        # All-India preference → keep any job (widest net). "India" is a valid
+        # Naukri location slug, but job cards list cities ("Noida", "Bengaluru")
+        # without the country, so a plain substring match would drop them all.
+        # Any preference containing the word "india" (e.g. "india", "all india",
+        # "anywhere in india") means "anywhere in India" → match everything.
+        if re.search(r"\bindia\b", pl):
+            return True
         # Remote preference
         if pl in ("remote", "work from home", "wfh"):
             if any(term in jl for term in _REMOTE_TERMS):
@@ -296,6 +353,125 @@ def _matches_location(location_text, preferred=None):
             if variant in jl:
                 return True
     return False
+
+
+def _full_url(link):
+    """Naukri sometimes returns protocol-relative links; make them absolute."""
+    if not link:
+        return None
+    if link.startswith("//"):
+        return "https:" + link
+    if link.startswith("/"):
+        return "https://www.naukri.com" + link
+    return link
+
+
+# Detail-page fetches are capped per run so a bad page layout (or a very long
+# scrape) can't stall the whole pipeline. Beyond the cap we fall back to the
+# search-card snippet score.
+_fetch_count = 0
+MAX_DETAIL_FETCHES = get_max_fetches()
+
+
+def _fetch_detail_text(page, url, title):
+    """
+    Opens one job's detail page and returns its visible text (keyskills + JD).
+    Best-effort: multiple selector fallbacks, finally the whole page body, so a
+    Naukri redesign can't silently break matching. Returns None on failure.
+    """
+    global _fetch_count
+    if MAX_DETAIL_FETCHES and _fetch_count >= MAX_DETAIL_FETCHES:
+        return None
+    _fetch_count += 1
+
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        page.wait_for_timeout(1500)                     # let the SPA render
+        try:
+            # Naukri lazy-renders part of the JD below the fold.
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            page.wait_for_timeout(800)
+        except Exception:
+            pass
+    except Exception as exc:
+        print(f"      ⚠️ JD page load failed for {title!r}: {exc}")
+        return None
+
+    try:
+        parts = []
+        # Keyskills tags
+        for selector in ("span[class*='keyskill']", "span[class*='keySkill']",
+                         "a[class*='keySkill']", "div[class*='keyskill'] span"):
+            texts = [e.inner_text().strip() for e in page.query_selector_all(selector)
+                     if e.inner_text().strip()]
+            if texts:
+                parts.append(" ".join(texts))
+                break
+        # Main description block
+        for selector in ("div.job-desc", "section.job-desc",
+                         "div[class*='job-description']", "section[class*='job-description']",
+                         "div[class*='description']", "div[class*='jd-content']",
+                         "div[class*='job-desc']", "div[class*='nI-gNb-description']"):
+            el = page.query_selector(selector)
+            if el:
+                t = (el.inner_text() or "").strip()
+                if len(t) > 40:
+                    parts.append(t)
+                    break
+        if not parts:                                    # robust fallback
+            body = page.inner_text("body") or ""
+            if body.strip():
+                parts.append(body)
+        return " | ".join(parts)
+    except Exception as exc:
+        print(f"      ⚠️ JD extraction failed for {title!r}: {exc}")
+        return None
+
+
+def _reject_reason(score, role_hit, min_skills):
+    """One-line reason the resume<->JD gate dropped a job, for the daily email."""
+    if role_hit:
+        return f"Role matched, but 0 of your {min_skills}+ skills found in the JD"
+    if score > 0:
+        return f"Only {score}/{min_skills} resume skills matched — no role match"
+    return "No resume skills or role matched in the JD"
+
+
+def _relevance_check(page, job, matchers, role_kws, min_skills):
+    """
+    Resume <-> job description gate. Returns (keep, score, matched_skills,
+    role_hit).
+
+    Flow: score the search card first (free). Clearly-irrelevant cards are
+    dropped without opening their page. Otherwise the full JD page is fetched
+    and scored. If nothing usable is available (extraction/fetch failure) the
+    job is KEPT — a scraper hiccup must never silently cost the user a job.
+    """
+    if min_skills <= 0:              # disabled via env OR no skills in profile
+        return True, 0, [], False
+
+    title = job.get("title") or ""
+    card_text = " ".join(x for x in (job.get("snippet"), job.get("keyskills")) if x)
+    c_score = c_matched = c_role = None
+    if card_text:
+        c_score, c_matched, c_role = score_text(title, card_text, matchers, role_kws)
+        if c_score < 1 and not c_role:
+            return False, c_score, c_matched, False     # clearly irrelevant
+
+    if fetch_detail_enabled():
+        url = _full_url(job.get("link"))
+        jd_text = _fetch_detail_text(page, url, title) if url else None
+        if jd_text:
+            score, matched, role_hit = score_text(title, jd_text, matchers, role_kws)
+            return should_keep(score, role_hit, min_skills), score, matched, role_hit
+        if c_score is None:
+            return True, 0, [], False                   # fetch failed, can't judge -> keep
+        return should_keep(c_score, c_role, min_skills), c_score, c_matched, bool(c_role)
+
+    # Card-only mode
+    if c_score is None:
+        return True, 0, [], False                       # no card text -> keep
+    return should_keep(c_score, c_role, min_skills), c_score, c_matched, bool(c_role)
 
 
 DEBUG_DIR = Path(__file__).with_name("debug")
@@ -377,7 +553,10 @@ def _extract_jobs_from_page(page, limit=None):
             "location": location,
             "salary": salary,
             "posted": posted,
+            "snippet": _extract_description(job),
+            "keyskills": _extract_keyskills(job),
             "status": "pending",
+            "reason": "Newly scraped — waiting to be applied",
         })
 
     return job_list
@@ -403,7 +582,7 @@ def _safe_go_to(page, url):
     return False
 
 
-def scrape_naukri(roles=None, max_pages=10, max_jobs_per_role=10):
+def scrape_naukri(roles=None, max_pages=3, max_jobs_per_role=10):
     resume = get_resume_data()
     if not resume:
         raise RuntimeError("No resume data found. Parse a resume first.")
@@ -447,6 +626,24 @@ def scrape_naukri(roles=None, max_pages=10, max_jobs_per_role=10):
         seen_fps = set()
         # Real preferred locations (drop the None placeholder) for filtering.
         preferred_locs = [l for l in locations if l]
+        # Funnel counters for the dashboard (daily_stats collection).
+        seen_total = 0       # job cards seen on Naukri (after location filter)
+        new_raw_total = 0    # cards that were genuinely new (passed dedup)
+
+        # Resume <-> JD relevance matchers (built once for the whole run).
+        matchers = build_skill_matchers(resume)
+        role_kws = role_keywords(resume)
+        min_skills = get_min_skills()
+        dropped_relevance = 0
+        rejected_jobs = []  # jobs dropped by the relevance gate, for the daily email
+        selected_jobs = []  # jobs that PASSED the gate -> pending_jobs (with the why)
+        if matching_enabled() and not matchers:
+            # No skills in the profile -> matching would drop everything.
+            print("⚠️ resume has no skills — relevance matching DISABLED (all jobs kept).")
+            min_skills = 0
+        if matching_enabled():
+            print(f"🎯 Resume<->JD matching ON: keep if ≥{min_skills} skills "
+                  f"(or ≥1 + role match) | fetch detail pages: {fetch_detail_enabled()}")
 
         # ---- Search each role × location, deduping across all of them ----
         for role in search_roles:
@@ -469,9 +666,9 @@ def scrape_naukri(roles=None, max_pages=10, max_jobs_per_role=10):
                     # Wait for job cards to render (SPA), fall back to a fixed wait.
                     try:
                         page.wait_for_selector("div.srp-jobtuple-wrapper, article",
-                                               timeout=20000)
+                                               timeout=10000)
                     except Exception:
-                        page.wait_for_timeout(4000)
+                        page.wait_for_timeout(2000)
 
                     page_jobs = _extract_jobs_from_page(page)
                     if not page_jobs:
@@ -491,8 +688,10 @@ def scrape_naukri(roles=None, max_pages=10, max_jobs_per_role=10):
                         if len(kept) != len(page_jobs):
                             print(f"      🧭 location filter: kept {len(kept)}/{len(page_jobs)}")
                         page_jobs = kept
+                    seen_total += len(page_jobs)
 
-                    new_on_page = 0
+                    new_on_page = 0    # passed dedup (raw new cards)
+                    kept_on_page = 0   # ... AND passed the relevance gate
                     for job in page_jobs:
                         link = job.get("link")
                         fp = job_fingerprint(job)
@@ -502,32 +701,101 @@ def scrape_naukri(roles=None, max_pages=10, max_jobs_per_role=10):
                             continue
                         if fp in existing_fps or fp in seen_fps:
                             continue
+                        # This card is genuinely new. Mark it seen immediately
+                        # (before the relevance gate) so a job dropped here is
+                        # not re-fetched/re-judged under another role/location.
                         if link:
                             seen_links.add(link)
                         seen_fps.add(fp)
+                        new_on_page += 1
+
+                        # Resume <-> JD relevance gate: only scrape jobs whose
+                        # description actually matches the user's profile.
+                        keep, score, matched, role_hit = _relevance_check(
+                            page, job, matchers, role_kws, min_skills)
+                        if not keep:
+                            dropped_relevance += 1
+                            print(f"      🎯 relevance: SKIP {job.get('title', '')[:48]!r} "
+                                  f"(matched {len(matched)}, score {score})")
+                            rejected_jobs.append({
+                                "title": job.get("title", ""),
+                                "company": job.get("company", ""),
+                                "location": job.get("location", ""),
+                                "link": job.get("link", ""),
+                                "reason": _reject_reason(score, role_hit, min_skills),
+                            })
+                            continue
+
+                        kept_on_page += 1
+                        job["relevance_score"] = score
+                        job["matched_skills"] = matched
+                        job["role_hit"] = role_hit
                         job["search_role"] = role       # which query surfaced this job
                         job["search_location"] = location
+                        # Record WHY this job was selected, for the daily selection email.
+                        selected_jobs.append({
+                            "title": job.get("title", ""),
+                            "company": job.get("company", ""),
+                            "location": job.get("location", ""),
+                            "link": job.get("link", ""),
+                            "search_role": role,
+                            "score": score,
+                            "matched_skills": matched,
+                            "role_hit": role_hit,
+                            "min_skills": min_skills,
+                        })
                         job_list.append(job)
-                        new_on_page += 1
                         combo_count += 1
                         if combo_count >= max_jobs_per_role:
                             break
 
-                    print(f"      ✓ {new_on_page} new / {len(page_jobs)} on page "
+                    print(f"      ✓ {kept_on_page} relevant / {new_on_page} new / "
+                          f"{len(page_jobs)} on page "
                           f"({combo_count}/{max_jobs_per_role} for this role+location)")
+
+                    # sort=f returns newest-first, so once a page has nothing
+                    # NEW (all duplicates), every older page will too → stop
+                    # this role+location combo early. Big speed-up: after the
+                    # first day most combos hit all-duplicates on page 1.
+                    # (Uses the raw-new count: a page whose cards were ALL
+                    # dropped for relevance can still have relevant jobs on
+                    # older pages, so we must keep going there.)
+                    if new_on_page == 0:
+                        print("      ℹ️ 0 new on this page — older pages are all "
+                              "duplicates, stopping this combo.")
+                        break
+                    new_raw_total += new_on_page
 
         # Safety net: even though sort=f orders server-side, re-sort locally
         # by posting freshness (newest first) before saving.
         job_list.sort(key=lambda j: _freshness_hours(j.get("posted")))
 
+        # ALWAYS APPEND — insert_many adds these at the end of pending_jobs,
+        # never overwriting existing rows. Old pending (backlog) stays above
+        # them, and auto_apply processes by ascending _id, so the backlog is
+        # applied (cleared) before fresh jobs. needs_review/skipped rows are
+        # intentionally left untouched.
         if job_list:
             db["pending_jobs"].insert_many(job_list)
+
+        if matching_enabled() and dropped_relevance:
+            print(f"🎯 Relevance gate: dropped {dropped_relevance} jobs that "
+                  f"didn't match the resume ({len(job_list)} kept).")
+
+        # Log today's funnel numbers (dashboard source): cards seen, new cards,
+        # relevance-dropped, and finally scraped into pending_jobs.
+        record_daily_stats({
+            "seen": seen_total,
+            "new_raw": new_raw_total,
+            "relevance_dropped": dropped_relevance,
+            "scraped": len(job_list),
+        })
 
         print(f"\nFound {len(job_list)} NEW jobs (newest first) and saved to "
               f"MongoDB (skipped duplicates already in pending/applied).")
         browser.close()
 
-    return len(job_list)
+    return len(job_list), rejected_jobs, selected_jobs
 
 
 if __name__ == "__main__":

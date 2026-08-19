@@ -26,7 +26,8 @@ except Exception:
 
 from scraper import scrape_naukri
 from auto_apply import run_interactive_apply
-from emailer import send_status_email
+from emailer import send_status_email, send_selection_email
+from database import record_daily_stats
 
 
 def main():
@@ -34,11 +35,14 @@ def main():
     print(f"\n===== JobBot daily run started: {started:%Y-%m-%d %H:%M:%S} =====")
 
     scraped_count = 0
+    rejected_jobs = []  # jobs dropped by the relevance gate (never saved to pending)
+    selected_jobs = []  # jobs that passed the gate -> pending_jobs (with the why)
     results = []
+    untouched = 0  # pending jobs not reached this run (cap/budget/apply wall)
 
     # ---- Step 1: scrape ----
     try:
-        scraped_count = scrape_naukri() or 0
+        scraped_count, rejected_jobs, selected_jobs = scrape_naukri() or (0, [], [])
         print(f"[scrape] {scraped_count} new jobs added to pending_jobs.")
     except Exception:
         print("[scrape] FAILED:")
@@ -46,8 +50,17 @@ def main():
 
     # ---- Step 2: apply (unattended) ----
     try:
-        results = run_interactive_apply(interactive=False) or []
+        results, untouched = run_interactive_apply(interactive=False) or ([], 0)
         print(f"[apply] processed {len(results)} jobs.")
+        # Log apply-phase funnel numbers for the dashboard (daily_stats).
+        from collections import Counter
+        status_counts = Counter(r.get("status") for r in results if isinstance(r, dict))
+        record_daily_stats({
+            "applied": status_counts.get("applied", 0) + status_counts.get("already_applied", 0),
+            "apply_errors": status_counts.get("error", 0),
+            "needs_review": status_counts.get("needs_review", 0),
+            "manual": status_counts.get("apply_manually", 0),
+        })
     except Exception:
         print("[apply] FAILED:")
         traceback.print_exc()
@@ -59,11 +72,25 @@ def main():
     # find nothing new and stay silent.
     try:
         if results or scraped_count:
-            send_status_email(results, scraped_count=scraped_count)
+            send_status_email(results, scraped_count=scraped_count, untouched=untouched,
+                             rejected_jobs=rejected_jobs)
         else:
             print("[email] Nothing to report (0 scraped, 0 processed) — skipping email.")
     except Exception:
         print("[email] FAILED:")
+        traceback.print_exc()
+
+    # ---- Step 4: separate selection-basis email ----
+    # Explains WHY each job went into pending_jobs (matched skills / role hit) or
+    # was rejected (resume<->JD gate). Sent only when the scrape judged something
+    # this run, so same-day no-op runs stay silent.
+    try:
+        if selected_jobs or rejected_jobs:
+            send_selection_email(selected_jobs, rejected_jobs)
+        else:
+            print("[email] Nothing to judge for selection email — skipping.")
+    except Exception:
+        print("[selection-email] FAILED:")
         traceback.print_exc()
 
     elapsed = (datetime.now() - started).total_seconds()

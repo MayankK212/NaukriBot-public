@@ -1,0 +1,1285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JobBot — Premium Pipeline Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+/* ========================================================
+   PREMIUM GLASSMORPHISM DASHBOARD
+   Dark glassmorphic design — inspired by Coinix, Finotive,
+   Lifestats, Analytics Overview & Fitness dashboards
+   ======================================================== */
+
+:root {
+  /* --- Palette --- */
+  --bg-primary:     #080b10;
+  --bg-sidebar:     rgba(8,11,16,0.88);
+  --glass:          rgba(16,20,30,0.55);
+  --glass-hover:    rgba(22,28,42,0.7);
+  --glass-border:   rgba(255,255,255,0.06);
+  --glass-glow:     rgba(56,189,248,0.06);
+  --glass-strong:   rgba(10,14,22,0.78);
+  --glass-card:     rgba(12,16,26,0.62);
+  --text-primary:   #eef0f4;
+  --text-secondary: rgba(238,240,244,0.52);
+  --text-dim:       rgba(238,240,244,0.30);
+  --accent:         #38bdf8;
+  --accent-glow:    rgba(56,189,248,0.22);
+  --accent2:        #67e8f9;
+  --accent3:        #f87171;
+  --accent4:        #34d399;
+  --accent5:        #a78bfa;
+  --accent6:        #fb923c;
+  --success:        #34d399;
+  --warning:        #fbbf24;
+  --danger:         #f87171;
+  --radius:         16px;
+  --radius-sm:      12px;
+  --radius-xs:      8px;
+  --blur:           28px;
+  --transition:     0.25s cubic-bezier(0.4,0,0.2,1);
+  --font:           'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* --- Reset & Base --- */
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* --- Ambient Background --- */
+#bgLayers {
+  position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+}
+#bgImage {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  background:
+    radial-gradient(ellipse 90% 70% at 25% 30%, rgba(56,189,248,0.04) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 60% at 80% 70%, rgba(168,85,247,0.03) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 50% at 50% 90%, rgba(52,211,153,0.02) 0%, transparent 50%),
+    linear-gradient(160deg, #080b10 0%, #0c1018 30%, #0a0f16 60%, #080b10 100%);
+}
+#bgOverlay {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 40%, rgba(56,189,248,0.025) 0%, transparent 60%),
+    linear-gradient(180deg, rgba(8,11,16,0.3) 0%, rgba(8,11,16,0.7) 55%, #080b10 100%);
+}
+#bgNoise {
+  position: absolute; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E");
+  opacity: 0.4;
+}
+
+/* --- App Shell --- */
+#app {
+  position: relative; z-index: 1; display: flex; height: 100vh; overflow: hidden;
+}
+
+/* ============================================
+   SIDEBAR
+   ============================================ */
+#sidebar {
+  width: 72px; min-width: 72px; height: 100vh;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 20px 0 24px; gap: 6px;
+  background: var(--bg-sidebar);
+  backdrop-filter: blur(var(--blur)); -webkit-backdrop-filter: blur(var(--blur));
+  border-right: 1px solid var(--glass-border);
+  z-index: 50;
+  transition: width var(--transition), min-width var(--transition);
+}
+.sidebar-brand {
+  width: 40px; height: 40px; border-radius: 12px; margin-bottom: 22px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: grid; place-items: center;
+  font-weight: 900; font-size: 15px; color: #080b10;
+  box-shadow: 0 4px 20px var(--accent-glow);
+  flex-shrink: 0;
+}
+.nav-item {
+  width: 44px; height: 44px; border-radius: 12px; border: none;
+  background: transparent; color: var(--text-secondary);
+  display: grid; place-items: center; cursor: pointer;
+  transition: all var(--transition); position: relative;
+}
+.nav-item:hover { background: rgba(255,255,255,0.05); color: var(--text-primary); }
+.nav-item.active {
+  background: rgba(56,189,248,0.10); color: var(--accent);
+  box-shadow: inset 0 0 0 1px rgba(56,189,248,0.20);
+}
+.nav-item.active::before {
+  content: ''; position: absolute; left: -14px; top: 50%; transform: translateY(-50%);
+  width: 3px; height: 22px; border-radius: 0 3px 3px 0;
+  background: var(--accent); box-shadow: 0 0 12px var(--accent-glow);
+}
+.nav-item svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.sidebar-spacer { flex: 1; }
+
+/* ============================================
+   MAIN CONTENT
+   ============================================ */
+#main {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden;
+  min-width: 0;
+}
+
+/* --- Top Bar --- */
+#topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 32px; gap: 16px; flex-shrink: 0;
+  border-bottom: 1px solid var(--glass-border);
+  background: rgba(8,11,16,0.50);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+}
+#topbar .brand { display: flex; align-items: center; gap: 14px; }
+#topbar h1 { font-size: 19px; font-weight: 700; letter-spacing: -0.3px; }
+#topbar .sub { color: var(--text-secondary); font-size: 12.5px; font-weight: 400; margin-top: 1px; }
+#topbar-actions { display: flex; align-items: center; gap: 12px; }
+.btn-glass {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border-radius: var(--radius-sm); border: 1px solid var(--glass-border);
+  background: var(--glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  color: var(--text-primary); font-size: 12.5px; font-weight: 500;
+  cursor: pointer; transition: all var(--transition); font-family: var(--font);
+}
+.btn-glass:hover { background: var(--glass-hover); border-color: rgba(255,255,255,0.12); }
+.btn-accent {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border: none; color: #080b10; font-weight: 700;
+  box-shadow: 0 4px 18px var(--accent-glow);
+}
+.btn-accent:hover { filter: brightness(1.1); transform: translateY(-1px); box-shadow: 0 6px 24px rgba(56,189,248,0.3); }
+.btn-accent svg { stroke: #080b10; }
+.last-updated { color: var(--text-dim); font-size: 11.5px; white-space: nowrap; }
+
+/* --- Filter Bar (inside topbar area) --- */
+#filterBar {
+  padding: 12px 32px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--glass-border);
+  background: rgba(8,11,16,0.35);
+}
+.filter-chip {
+  position: relative;
+}
+.filter-chip-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 6px 13px; border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  color: var(--text-secondary); font-size: 12px; font-weight: 500;
+  cursor: pointer; transition: all var(--transition); font-family: var(--font);
+}
+.filter-chip-btn:hover { border-color: rgba(255,255,255,0.15); color: var(--text-primary); }
+.filter-chip-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(56,189,248,0.08); }
+.filter-chip-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
+  background: var(--accent); color: #080b10; font-size: 10px; font-weight: 800;
+  display: none;
+}
+.filter-chip-count.show { display: inline-flex; }
+.filter-chip-arrow { font-size: 10px; opacity: 0.5; }
+.filter-chip-pop {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 80;
+  width: 220px; padding: 8px; border-radius: var(--radius-sm);
+  background: rgba(12,16,26,0.94); backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px);
+  border: 1px solid var(--glass-border); box-shadow: 0 16px 48px rgba(0,0,0,0.65);
+  display: none;
+}
+.filter-chip.open .filter-chip-pop { display: block; }
+.filter-pop-search {
+  width: 100%; box-sizing: border-box; margin-bottom: 6px;
+  padding: 6px 10px; border-radius: var(--radius-xs);
+  background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border);
+  color: var(--text-primary); font-size: 12px; font-family: var(--font);
+  outline: none;
+}
+.filter-pop-search:focus { border-color: var(--accent); }
+.filter-pop-search::placeholder { color: var(--text-dim); }
+.filter-pop-list { max-height: 180px; overflow-y: auto; }
+.filter-pop-opt {
+  display: flex; align-items: center; gap: 7px; padding: 5px 6px; border-radius: 6px;
+  font-size: 12px; color: var(--text-primary); cursor: pointer; transition: background 0.15s;
+}
+.filter-pop-opt:hover { background: rgba(255,255,255,0.05); }
+.filter-pop-opt input { accent-color: var(--accent); cursor: pointer; }
+.filter-pop-foot { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--glass-border); display: flex; justify-content: flex-end; }
+.filter-pop-clear { background: none; border: none; color: var(--accent); font-size: 11px; font-weight: 600; cursor: pointer; padding: 3px 6px; font-family: var(--font); }
+.filter-pop-empty { padding: 10px; color: var(--text-dim); font-size: 11px; text-align: center; }
+
+/* Date inputs */
+.filter-date {
+  padding: 6px 10px; border-radius: var(--radius-xs);
+  background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border);
+  color: var(--text-primary); font-size: 12px; font-family: var(--font); outline: none;
+  min-width: 130px;
+}
+.filter-date:focus { border-color: var(--accent); }
+.filter-date::-webkit-calendar-picker-indicator { filter: invert(0.7); }
+.filter-clear-btn {
+  padding: 6px 14px; border-radius: var(--radius-xs); border: 1px solid var(--glass-border);
+  background: transparent; color: var(--text-secondary); font-size: 11px; font-weight: 600;
+  cursor: pointer; font-family: var(--font); transition: all var(--transition);
+}
+.filter-clear-btn:hover { border-color: var(--accent); color: var(--accent); }
+.filter-today-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 6px 14px; border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  color: var(--text-secondary); font-size: 12px; font-weight: 600;
+  cursor: pointer; font-family: var(--font); transition: all var(--transition);
+}
+.filter-today-btn:hover { border-color: rgba(255,255,255,0.15); color: var(--text-primary); }
+.filter-today-btn.active {
+  border-color: var(--accent); color: #080b10;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  box-shadow: 0 4px 18px var(--accent-glow);
+}
+.filter-label { color: var(--text-dim); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+
+/* Filter Banner */
+#filterBanner {
+  padding: 10px 32px; display: none; align-items: center; gap: 8px; flex-wrap: wrap;
+  background: rgba(56,189,248,0.04); border-bottom: 1px solid rgba(56,189,248,0.12);
+  font-size: 12.5px;
+}
+#filterBanner.show { display: flex; }
+#filterBanner .fb-label { color: var(--accent); font-weight: 700; }
+.fb-chip {
+  display: inline-block; padding: 2px 10px; border-radius: 999px;
+  background: rgba(56,189,248,0.08); border: 1px solid rgba(56,189,248,0.20);
+  color: var(--accent2); font-size: 11px; font-weight: 500;
+}
+#fbClear {
+  margin-left: auto; background: none; border: 1px solid rgba(56,189,248,0.25);
+  color: var(--accent); border-radius: var(--radius-xs); padding: 3px 10px;
+  font-size: 11px; font-weight: 600; cursor: pointer; font-family: var(--font);
+}
+#fbClear:hover { background: rgba(56,189,248,0.10); }
+
+/* --- Page Container --- */
+#pages { flex: 1; overflow: hidden; padding: 28px 32px 40px; display: flex; flex-direction: column; }
+.page { display: none; flex: 1; min-height: 0; animation: pageIn 0.35s ease; }
+.page.active { display: flex; flex-direction: column; }
+@keyframes pageIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+
+/* --- KPI Row --- */
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 28px; }
+
+/* --- KPI Card (Glassmorphic) --- */
+.kpi {
+  position: relative; padding: 22px 20px; border-radius: var(--radius);
+  background: var(--glass-card); backdrop-filter: blur(var(--blur)); -webkit-backdrop-filter: blur(var(--blur));
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04);
+  cursor: pointer; transition: all var(--transition); overflow: hidden;
+}
+.kpi::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+}
+.kpi:hover {
+  transform: translateY(-3px);
+  border-color: rgba(56,189,248,0.15);
+  box-shadow: 0 12px 44px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06), 0 0 20px rgba(56,189,248,0.04);
+}
+.kpi-icon {
+  width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center;
+  margin-bottom: 14px; font-size: 18px;
+}
+.kpi-value {
+  font-size: 30px; font-weight: 800; line-height: 1.05; letter-spacing: -0.5px;
+  background: linear-gradient(135deg, var(--text-primary), rgba(240,240,242,0.8));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+.kpi-label { color: var(--text-secondary); font-size: 12.5px; font-weight: 500; margin-top: 5px; }
+.kpi-click-hint {
+  position: absolute; top: 14px; right: 14px; font-size: 10px; color: var(--text-dim);
+  opacity: 0; transition: opacity 0.2s;
+}
+.kpi:hover .kpi-click-hint { opacity: 1; }
+
+/* --- Section Card (Glassmorphic) --- */
+.section {
+  border-radius: var(--radius); padding: 24px; margin-bottom: 24px;
+  background: var(--glass-card); backdrop-filter: blur(var(--blur)); -webkit-backdrop-filter: blur(var(--blur));
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03);
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column; min-height: 0;
+}
+.section::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+}
+.section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; flex: none; }
+.section-title {
+  font-size: 14px; font-weight: 600; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: 0.6px;
+  display: flex; align-items: center; gap: 8px;
+}
+.section-title .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.section-subtitle { color: var(--text-dim); font-size: 11px; }
+.section canvas { display: block; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; flex: 1; min-height: 0; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; flex: 1; min-height: 0; }
+.grid-23 { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; flex: 1; min-height: 0; }
+.grid-32 { display: grid; grid-template-columns: 1fr 2fr; gap: 20px; flex: 1; min-height: 0; }
+.grid-2 > .section, .grid-3 > .section, .grid-23 > .section, .grid-32 > .section { height: 100%; margin-bottom: 0; min-height: 0; }
+.page > .section { flex: 1; min-height: 0; }
+#page-pipeline > .section { flex: 0 0 auto; }
+#funnel-wrap, #funnel-wrap-p, #roles-wrap, #companies-wrap, #locations-wrap {
+  flex: 1; min-height: 0; display: grid; place-items: center;
+}
+.chart-fill { flex: 1; min-height: 0; position: relative; width: 100%; }
+.chart-box { width: 100%; max-height: 100%; position: relative; }
+.chart-fill canvas, .chart-box canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; }
+.empty-note { color: var(--text-dim); font-size: 13px; text-align: center; padding: 32px 12px; font-style: italic; }
+
+/* --- Page Hero (Overview top) --- */
+.page-hero {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 28px; padding: 0 4px; flex: none;
+}
+.page-hero h2 { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; }
+.page-hero h2 span { color: var(--accent); }
+.page-hero .hero-sub { color: var(--text-secondary); font-size: 13.5px; margin-top: 3px; }
+.page-hero .hero-sub b { color: var(--text-primary); }
+
+/* --- Slide-out Job Panel --- */
+.panel-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 900;
+  opacity: 0; pointer-events: none; transition: opacity 0.3s;
+}
+.panel-overlay.open { opacity: 1; pointer-events: auto; }
+.job-panel {
+  position: fixed; top: 0; right: 0; width: 440px; max-width: 92vw; height: 100%;
+  background: rgba(10,14,24,0.94); backdrop-filter: blur(36px); -webkit-backdrop-filter: blur(36px);
+  border-left: 1px solid var(--glass-border);
+  z-index: 1000; transform: translateX(100%); transition: transform 0.35s cubic-bezier(0.4,0,0.2,1);
+  display: flex; flex-direction: column;
+  box-shadow: -10px 0 48px rgba(0,0,0,0.55);
+}
+.job-panel.open { transform: translateX(0); }
+.panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 22px; border-bottom: 1px solid var(--glass-border);
+}
+.panel-header h3 { font-size: 16px; font-weight: 700; }
+.panel-header .count { color: var(--accent); font-size: 12px; font-weight: 600; margin-left: 8px; }
+#closePanel {
+  background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border);
+  color: var(--text-secondary); font-size: 18px; cursor: pointer;
+  width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center;
+  transition: all var(--transition);
+}
+#closePanel:hover { background: rgba(255,255,255,0.08); color: var(--text-primary); }
+.panel-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+.job-card {
+  background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: var(--radius-sm);
+  padding: 14px; margin-bottom: 10px; transition: border-color var(--transition);
+}
+.job-card:hover { border-color: rgba(255,255,255,0.12); }
+.job-card .title { font-weight: 700; font-size: 13.5px; margin-bottom: 3px; }
+.job-card .company { color: var(--accent); font-size: 12.5px; }
+.job-card .meta-row { color: var(--text-dim); font-size: 11.5px; margin-top: 6px; display: flex; gap: 10px; flex-wrap: wrap; }
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 6px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px;
+}
+.badge-applied { background: rgba(52,211,153,0.12); color: var(--success); }
+.badge-pending { background: rgba(96,165,250,0.12); color: var(--accent5); }
+.badge-needs_review { background: rgba(245,158,11,0.12); color: var(--warning); }
+.badge-apply_manually { background: rgba(167,139,250,0.12); color: var(--accent6); }
+.badge-skipped { background: rgba(148,163,184,0.12); color: var(--text-dim); }
+.job-card a { color: var(--accent); text-decoration: none; font-size: 11.5px; font-weight: 600; }
+.job-card a:hover { text-decoration: underline; }
+.job-card .reason {
+  margin-top: 8px; padding: 8px 10px; border-radius: var(--radius-xs);
+  background: rgba(255,255,255,0.02); border-left: 3px solid rgba(56,189,248,0.25);
+  color: var(--text-secondary); font-size: 11.5px; line-height: 1.45;
+}
+.job-card .reason b { color: var(--warning); }
+.panel-footer { padding: 14px 20px; border-top: 1px solid var(--glass-border); text-align: center; }
+#loadMore {
+  padding: 9px 22px; border-radius: var(--radius-sm); border: none;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #080b10; font-weight: 700; font-size: 12.5px; cursor: pointer;
+  font-family: var(--font); transition: all var(--transition);
+}
+#loadMore:hover { filter: brightness(1.1); transform: translateY(-1px); }
+#loadMore:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+.panel-loading { text-align: center; padding: 40px; color: var(--text-dim); }
+.spinner {
+  display: inline-block; width: 26px; height: 26px;
+  border: 3px solid rgba(255,255,255,0.06); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* --- Custom Scrollbar --- */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.12); }
+
+/* --- Responsive --- */
+@media (max-width: 900px) {
+  .grid-2, .grid-3, .grid-23, .grid-32 { grid-template-columns: 1fr; }
+  .kpi-row { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+  #pages { padding: 20px 16px 32px; overflow-y: auto; display: block; }
+  .page { display: none; flex: none; }
+  .page.active { display: block; }
+  .grid-2, .grid-3, .grid-23, .grid-32 { flex: none; }
+  #topbar { padding: 12px 16px; }
+  #filterBar { padding: 10px 16px; }
+  #filterBanner { padding: 8px 16px; }
+}
+@media (max-width: 640px) {
+  #sidebar { width: 54px; min-width: 54px; }
+  .sidebar-brand { width: 34px; height: 34px; font-size: 13px; border-radius: 10px; }
+  .nav-item { width: 38px; height: 38px; }
+  #topbar h1 { font-size: 15px; }
+  .page-hero h2 { font-size: 20px; }
+  .kpi-value { font-size: 24px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ======================== AMBIENT BACKGROUND ======================== -->
+<div id="bgLayers">
+  <div id="bgImage"></div>
+  <div id="bgOverlay"></div>
+  <div id="bgNoise"></div>
+</div>
+
+<!-- ======================== APP SHELL ======================== -->
+<div id="app">
+
+  <!-- ======================== SIDEBAR ======================== -->
+  <nav id="sidebar">
+    <div class="sidebar-brand">JB</div>
+    <button class="nav-item active" data-page="overview" title="Overview">
+      <svg viewBox="0 0 24 24"><path d="M3 9.5L12 3l9 6.5V20a1.5 1.5 0 01-1.5 1.5h-4a1 1 0 01-1-1v-4.5a1 1 0 00-1-1h-3a1 1 0 00-1 1V21.5a1 1 0 01-1 1H4.5A1.5 1.5 0 013 21V9.5z"/></svg>
+    </button>
+    <button class="nav-item" data-page="pipeline" title="Pipeline">
+      <svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+    </button>
+    <button class="nav-item" data-page="jobs" title="Jobs Breakdown">
+      <svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
+    </button>
+    <button class="nav-item" data-page="trends" title="Trends">
+      <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    </button>
+    <div class="sidebar-spacer"></div>
+    <a href="https://jobbot-dashboard-zhft.onrender.com" target="_blank" class="nav-item" title="Open Live" style="text-decoration:none;">
+      <svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+    </a>
+  </nav>
+
+  <!-- ======================== MAIN CONTENT ======================== -->
+  <div id="main">
+
+    <!-- Top Bar -->
+    <header id="topbar">
+      <div class="brand">
+        <div>
+          <h1>JobBot <span style="color:var(--accent);">Pipeline</span></h1>
+          <div class="sub">Automated Naukri Applications &middot; MongoDB Atlas Live</div>
+        </div>
+      </div>
+      <div id="topbar-actions">
+        <span class="last-updated" id="updated">Loading…</span>
+        <button class="btn-glass" id="refreshBtn">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+          Refresh
+        </button>
+      </div>
+    </header>
+
+    <!-- Filter Bar -->
+    <div id="filterBar">
+      <div class="filter-chip" id="fcRole">
+        <div class="filter-chip-btn" title="Filter by role">
+          <span class="filter-chip-lbl">All Roles</span>
+          <span class="filter-chip-count">0</span>
+          <span class="filter-chip-arrow">▾</span>
+        </div>
+        <div class="filter-chip-pop">
+          <input class="filter-pop-search" placeholder="Search roles…">
+          <div class="filter-pop-list"></div>
+          <div class="filter-pop-foot"><button class="filter-pop-clear">✕ Clear</button></div>
+        </div>
+      </div>
+      <div class="filter-chip" id="fcCompany">
+        <div class="filter-chip-btn" title="Filter by company">
+          <span class="filter-chip-lbl">All Companies</span>
+          <span class="filter-chip-count">0</span>
+          <span class="filter-chip-arrow">▾</span>
+        </div>
+        <div class="filter-chip-pop">
+          <input class="filter-pop-search" placeholder="Search companies…">
+          <div class="filter-pop-list"></div>
+          <div class="filter-pop-foot"><button class="filter-pop-clear">✕ Clear</button></div>
+        </div>
+      </div>
+      <div class="filter-chip" id="fcLocation">
+        <div class="filter-chip-btn" title="Filter by location">
+          <span class="filter-chip-lbl">All Locations</span>
+          <span class="filter-chip-count">0</span>
+          <span class="filter-chip-arrow">▾</span>
+        </div>
+        <div class="filter-chip-pop">
+          <input class="filter-pop-search" placeholder="Search locations…">
+          <div class="filter-pop-list"></div>
+          <div class="filter-pop-foot"><button class="filter-pop-clear">✕ Clear</button></div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:2px;">
+        <span class="filter-label">From</span>
+        <input type="date" class="filter-date" id="filterFrom">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:2px;">
+        <span class="filter-label">To</span>
+        <input type="date" class="filter-date" id="filterTo">
+      </div>
+      <button class="filter-today-btn" id="filterToday" title="Filter the whole dashboard to today (IST)">⚡ Today</button>
+      <button class="filter-clear-btn" id="clearFilters">✕ Clear All</button>
+    </div>
+
+    <!-- Filter Banner -->
+    <div id="filterBanner">
+      <span class="fb-label">🔎 Filters applied</span>
+      <span id="filterChips"></span>
+      <button id="fbClear">✕ Clear all</button>
+    </div>
+
+    <!-- Pages -->
+    <div id="pages">
+
+      <!-- ========== PAGE: OVERVIEW ========== -->
+      <section class="page active" id="page-overview">
+        <div class="page-hero">
+          <div>
+            <h2>Hey, <span>Need help?</span> 👋</h2>
+            <div class="hero-sub">Your automated job pipeline — live from MongoDB Atlas</div>
+          </div>
+        </div>
+        <div class="kpi-row" id="kpis"></div>
+        <div class="grid-23">
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title"><span class="dot"></span>Daily Trends</div>
+              <div class="section-subtitle">Applied · Scraped · Flagged</div>
+            </div>
+            <div class="chart-fill"><canvas id="trendsChart" height="220"></canvas></div>
+          </div>
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title"><span class="dot"></span>Today's Funnel</div>
+            </div>
+            <div id="funnel-wrap"><div class="empty-note">Loading…</div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== PAGE: PIPELINE ========== -->
+      <section class="page" id="page-pipeline">
+        <div class="page-hero">
+          <div>
+            <h2>Pipeline <span>Health</span></h2>
+            <div class="hero-sub">Funnel stages & status breakdown</div>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-header">
+            <div class="section-title"><span class="dot"></span>Today's Application Funnel</div>
+            <div class="section-subtitle">Seen → Scraped → Applied → Errors</div>
+          </div>
+          <div id="funnel-wrap-p"><div class="empty-note">Loading…</div></div>
+        </div>
+        <div class="grid-2">
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title"><span class="dot"></span>Pipeline Status</div>
+              <div class="section-subtitle">Click a segment to view jobs</div>
+            </div>
+            <div class="chart-fill"><canvas id="statusChart" height="260"></canvas></div>
+          </div>
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title"><span class="dot"></span>Daily Applied</div>
+            </div>
+            <div class="chart-fill"><canvas id="dailyAppliedChart" height="260"></canvas></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== PAGE: JOBS ========== -->
+      <section class="page" id="page-jobs">
+        <div class="page-hero">
+          <div>
+            <h2>Jobs <span>Breakdown</span></h2>
+            <div class="hero-sub">By role, company & location</div>
+          </div>
+        </div>
+        <div class="grid-3">
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title"><span class="dot"></span>Jobs by Role</div>
+            </div>
+            <div id="roles-wrap"><div class="empty-note">Loading…</div></div>
+          </div>
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title"><span class="dot"></span>Top Companies</div>
+            </div>
+            <div id="companies-wrap"><div class="empty-note">Loading…</div></div>
+          </div>
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title"><span class="dot"></span>Jobs by Location</div>
+            </div>
+            <div id="locations-wrap"><div class="empty-note">Loading…</div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== PAGE: TRENDS ========== -->
+      <section class="page" id="page-trends">
+        <div class="page-hero">
+          <div>
+            <h2>Historical <span>Trends</span></h2>
+            <div class="hero-sub">Daily applied, scraped & flagged over time</div>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-header">
+            <div class="section-title"><span class="dot"></span>Full Daily Trends</div>
+            <div class="section-subtitle">All historical data</div>
+          </div>
+          <div class="chart-fill"><canvas id="trendsFullChart" height="320"></canvas></div>
+        </div>
+      </section>
+
+    </div><!-- /pages -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- ======================== SLIDE-OUT JOB PANEL ======================== -->
+<div class="panel-overlay" id="panelOverlay"></div>
+<div class="job-panel" id="jobPanel">
+  <div class="panel-header">
+    <div><h3 id="panelTitle">Jobs</h3><span class="count" id="panelCount"></span></div>
+    <button id="closePanel">&times;</button>
+  </div>
+  <div class="panel-body" id="panelBody">
+    <div class="panel-loading"><div class="spinner"></div><p style="margin-top:10px">Loading jobs…</p></div>
+  </div>
+  <div class="panel-footer">
+    <button id="loadMore">Load More</button>
+  </div>
+</div>
+
+<script>
+/* ==========================================================
+   JobBot Premium Dashboard — JavaScript
+   ========================================================== */
+const charts = {};
+
+// KPI definitions: [key, label, accentColor, bgRgba, icon(emoji), collection, status]
+const KPI_DEFS = [
+  ["total_applied", "Applied",     "#34d399", "rgba(52,211,153,0.10)",  "✅", "applied_jobs",   ""],
+  ["applied_today", "Today",       "#60a5fa", "rgba(96,165,250,0.10)",  "⚡", "applied_jobs",   "", "today"],
+  ["total_scraped", "Scraped",     "#38bdf8", "rgba(56,189,248,0.10)",  "🔍", "pending_jobs",   ""],
+  ["pending",       "Pending",     "#f59e0b", "rgba(245,158,11,0.10)",  "⏳", "pending_jobs",   "pending"],
+  ["needs_review",  "Review",      "#fbbf24", "rgba(251,191,36,0.10)",  "❓", "pending_jobs",   "needs_review"],
+  ["manual",        "Manual",      "#a78bfa", "rgba(167,139,250,0.10)", "🌐", "apply_manually", ""],
+  ["skipped",       "Skipped",     "#94a3b8", "rgba(148,163,184,0.10)", "⏭", "pending_jobs",   "skipped"],
+];
+
+// ---- Chart.js global defaults ----
+Chart.defaults.color = 'rgba(240,240,242,0.45)';
+Chart.defaults.borderColor = 'rgba(255,255,255,0.04)';
+Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+
+// ---- Escape HTML ----
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+// ---- Fetch JSON ----
+async function getJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(url + ' -> HTTP ' + res.status);
+  return res.json();
+}
+
+// ============================================================
+//  MULTI-SELECT FILTER COMPONENT
+// ============================================================
+function createFilterChip(rootId, placeholder, onChange) {
+  const root = document.getElementById(rootId);
+  const btn = root.querySelector('.filter-chip-btn');
+  const lbl = root.querySelector('.filter-chip-lbl');
+  const count = root.querySelector('.filter-chip-count');
+  const search = root.querySelector('.filter-pop-search');
+  const list = root.querySelector('.filter-pop-list');
+  const clearBtn = root.querySelector('.filter-pop-clear');
+  const selected = new Set();
+  let options = [];
+
+  function updateLabel() {
+    const vals = [...selected];
+    if (!vals.length) { lbl.textContent = placeholder; count.classList.remove('show'); return; }
+    const txt = vals.join(', ');
+    lbl.textContent = txt.length > 24 ? txt.slice(0, 23) + '…' : txt;
+    count.textContent = vals.length; count.classList.add('show');
+    btn.classList.add('active');
+  }
+  function renderList() {
+    const q = search.value.trim().toLowerCase();
+    const shown = options.filter(o => o.toLowerCase().includes(q));
+    if (!shown.length) { list.innerHTML = '<div class="filter-pop-empty">No matches</div>'; return; }
+    list.innerHTML = shown.map(o => {
+      const on = selected.has(o);
+      return '<label class="filter-pop-opt"><input type="checkbox" value="' + esc(o) + '"' +
+        (on ? ' checked' : '') + '><span>' + esc(o) + '</span></label>';
+    }).join('');
+    list.querySelectorAll('input').forEach(inp => {
+      inp.addEventListener('change', () => {
+        if (inp.checked) selected.add(inp.value); else selected.delete(inp.value);
+        updateLabel(); renderList(); onChange();
+      });
+    });
+  }
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const open = root.classList.toggle('open');
+    if (open) { search.value = ''; renderList(); search.focus(); }
+  });
+  search.addEventListener('input', renderList);
+  clearBtn.addEventListener('click', e => {
+    e.stopPropagation(); selected.clear(); updateLabel(); renderList(); onChange();
+  });
+  document.addEventListener('click', e => { if (!root.contains(e.target)) root.classList.remove('open'); });
+
+  return {
+    setOptions: opts => { options = opts || []; renderList(); },
+    selectedValues: () => [...selected],
+    clear: () => { selected.clear(); updateLabel(); renderList(); },
+  };
+}
+
+// ============================================================
+//  FILTER STATE
+// ============================================================
+let roleFC, companyFC, locationFC;
+let serverToday = null;  // set from /api/summary 'today' (server-computed IST date)
+
+// Today's date in Asia/Kolkata (the dashboard's timezone), never the browser's.
+// Prefers the server value so the "Today" button agrees with every card.
+function istToday() {
+  if (serverToday) return serverToday;
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+    const get = t => (parts.find(p => p.type === t) || {}).value;
+    return get('year') + '-' + get('month') + '-' + get('day');
+  } catch (e) {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
+function isTodayFilterActive() {
+  const from = document.getElementById('filterFrom').value;
+  const to = document.getElementById('filterTo').value;
+  const t = istToday();
+  return from === t && to === t;
+}
+
+function updateTodayBtnState() {
+  document.getElementById('filterToday').classList.toggle('active', isTodayFilterActive());
+}
+
+function setTodayFilter() {
+  const t = istToday();
+  const from = document.getElementById('filterFrom');
+  const to = document.getElementById('filterTo');
+  if (isTodayFilterActive()) {
+    // Toggle OFF: back to overall numbers.
+    from.value = ''; to.value = '';
+  } else {
+    from.value = t; to.value = t;
+  }
+  updateTodayBtnState();
+  onFilterChange();
+}
+
+function getFilterParams() {
+  const p = {};
+  const roles = roleFC.selectedValues();
+  const companies = companyFC.selectedValues();
+  const locations = locationFC.selectedValues();
+  if (roles.length) p.role = roles;
+  if (companies.length) p.company = companies;
+  if (locations.length) p.location = locations;
+  const from = document.getElementById('filterFrom').value;
+  const to = document.getElementById('filterTo').value;
+  if (from) p.from = from;
+  if (to) p.to = to;
+  return p;
+}
+
+function filterQueryString() {
+  const p = getFilterParams();
+  const s = new URLSearchParams();
+  (p.role || []).forEach(v => s.append('role', v));
+  (p.company || []).forEach(v => s.append('company', v));
+  (p.location || []).forEach(v => s.append('location', v));
+  if (p.from) s.append('from', p.from);
+  if (p.to) s.append('to', p.to);
+  return s.toString();
+}
+
+function jobPanelUrl(extraParams, replaceDims) {
+  const s = new URLSearchParams();
+  const p = getFilterParams();
+  ['role', 'company', 'location'].forEach(d => {
+    if (replaceDims && replaceDims[d] !== undefined) s.append(d, replaceDims[d]);
+    else if (p[d]) p[d].forEach(v => s.append(d, v));
+  });
+  // explicit from/to in extraParams (e.g. Today KPI) override the global ones
+  if ((!extraParams || !extraParams.from) && p.from) s.append('from', p.from);
+  if ((!extraParams || !extraParams.to) && p.to) s.append('to', p.to);
+  if (extraParams) for (const k in extraParams) if (extraParams[k]) s.append(k, extraParams[k]);
+  return '/api/jobs' + (s.toString() ? '?' + s.toString() : '');
+}
+
+// ============================================================
+//  PAGE NAVIGATION
+// ============================================================
+let currentPage = 'overview';
+
+document.querySelectorAll('.nav-item[data-page]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const page = btn.dataset.page;
+    if (page === currentPage) return;
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-' + page).classList.add('active');
+    currentPage = page;
+    // Ensure charts on the newly visible page render correctly
+    setTimeout(() => { Object.values(charts).forEach(c => { try { c.resize(); } catch(e){} }); }, 100);
+  });
+});
+
+// ============================================================
+//  RENDER: KPIs
+// ============================================================
+function renderKpis(data) {
+  // 'today' comes from the server so the Today card's click filter matches
+  // the exact day the applied_today count was computed (timezone-proof).
+  if (data.today) serverToday = data.today;
+  const today = data.today || istToday();
+  document.getElementById('kpis').innerHTML = KPI_DEFS.map(([key, lbl, color, bgRgba, icon, coll, status, dateMode]) => {
+    const extras = { collection: coll, status: status || '' };
+    if (dateMode === 'today') { extras.from = today; extras.to = today; }
+    const clickUrl = jobPanelUrl(extras);
+    return '<div class="kpi" data-url="' + clickUrl + '" data-title="' + lbl + '">' +
+      '<span class="kpi-click-hint">view →</span>' +
+      '<div class="kpi-icon" style="background:' + bgRgba + '">' + icon + '</div>' +
+      '<div class="kpi-value" style="background:linear-gradient(135deg,' + color + ',' + color + 'cc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">' + Number(data[key] || 0).toLocaleString() + '</div>' +
+      '<div class="kpi-label">' + lbl + '</div>' +
+    '</div>';
+  }).join('');
+
+  document.querySelectorAll('.kpi').forEach(el => {
+    el.addEventListener('click', () => {
+      const url = el.dataset.url;
+      const title = el.dataset.title;
+      if (url) openJobPanel(title, url);
+    });
+  });
+}
+
+// ============================================================
+//  RENDER: Funnel
+// ============================================================
+function renderFunnel(f, containerId) {
+  const wrap = document.getElementById(containerId);
+  const key = 'funnel_' + containerId;
+  if (charts[key]) { charts[key].destroy(); delete charts[key]; }
+  if (!f.labels.length) {
+    wrap.innerHTML = '<div class="empty-note">Funnel fills from the next daily run — seen/scraped/dropped were not tracked before today.</div>';
+    return;
+  }
+  wrap.innerHTML = '';
+  const box = document.createElement('div');
+  box.className = 'chart-box';
+  box.style.height = Math.min(300, Math.max(170, f.labels.length * 40)) + 'px';
+  const c = document.createElement('canvas');
+  box.appendChild(c);
+  wrap.appendChild(box);
+  const colors = ['#38bdf8','#38bdf8','#fbbf24','#34d399','#f87171','#fbbf24','#a78bfa'];
+  charts[key] = new Chart(c.getContext('2d'), {
+    type: 'bar',
+    data: { labels: f.labels, datasets: [{ data: f.values, backgroundColor: colors, borderRadius: 6, barThickness: 22 }] },
+    options: {
+      maintainAspectRatio: false,
+      indexAxis: 'y',
+      plugins: { legend: { display: false }, tooltip: { callbacks: { afterLabel: c => f.details[c.dataIndex] || '' } } },
+      scales: {
+        x: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: 'rgba(240,240,242,0.4)' } },
+        y: { grid: { display: false }, ticks: { color: 'rgba(240,240,242,0.65)', font: { weight: 600, size: 11.5 } } },
+      },
+    },
+  });
+}
+
+// ============================================================
+//  RENDER: Status Doughnut
+// ============================================================
+function renderStatus(rows) {
+  const key = 'status';
+  if (charts[key]) { charts[key].destroy(); delete charts[key]; }
+  const wrap = document.getElementById('statusChart');
+  if (!rows.length) { return; }
+
+  const statusMap = { 'Applied': 'applied_jobs', 'pending': 'pending_jobs', 'needs_review': 'pending_jobs', 'skipped': 'pending_jobs', 'Apply Manually': 'apply_manually' };
+  const statusFilter = { 'Applied': '', 'pending': 'pending', 'needs_review': 'needs_review', 'skipped': 'skipped', 'Apply Manually': '' };
+  const palette = { 'Applied': '#34d399', 'pending': '#60a5fa', 'needs_review': '#f59e0b', 'skipped': '#64748b', 'Apply Manually': '#a78bfa' };
+
+  charts[key] = new Chart(wrap.getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels: rows.map(r => r.label),
+      datasets: [{ data: rows.map(r => r.value), backgroundColor: rows.map(r => palette[r.label] || '#94a3b8'), borderWidth: 2, borderColor: 'rgba(16,16,24,0.75)' }],
+    },
+    options: {
+      maintainAspectRatio: false,
+      cutout: '65%',
+      plugins: { legend: { position: 'right', labels: { color: 'rgba(240,240,242,0.6)', boxWidth: 12, padding: 14, font: { size: 12 } } } },
+      onClick: (evt, elements) => {
+        if (!elements.length) return;
+        const idx = elements[0].index;
+        const label = rows[idx].label;
+        const coll = statusMap[label] || 'pending_jobs';
+        const status = statusFilter[label] || '';
+        openJobPanel(label, jobPanelUrl({ collection: coll, status: status || '' }));
+      },
+    },
+  });
+}
+
+// ============================================================
+//  RENDER: Daily Applied (sparkline on Pipeline page)
+// ============================================================
+function renderDailyApplied(daily) {
+  const key = 'dailyApplied';
+  if (charts[key]) { charts[key].destroy(); delete charts[key]; }
+  const wrap = document.getElementById('dailyAppliedChart');
+  if (!wrap) return;
+
+  charts[key] = new Chart(wrap.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: daily.map(d => d.date),
+      datasets: [{
+        label: 'Applied',
+        data: daily.map(d => d.applied),
+        borderColor: '#34d399',
+        backgroundColor: 'rgba(52,211,153,0.08)',
+        fill: true, tension: 0.4, pointRadius: 3, pointBackgroundColor: '#34d399',
+      }],
+    },
+    options: {
+      maintainAspectRatio: false,
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: 'rgba(240,240,242,0.4)', maxRotation: 45 }, grid: { color: 'rgba(255,255,255,0.03)' } },
+        y: { beginAtZero: true, ticks: { color: 'rgba(240,240,242,0.4)' }, grid: { color: 'rgba(255,255,255,0.04)' } },
+      },
+    },
+  });
+}
+
+// ============================================================
+//  RENDER: Trends (Overview + Full Trends page)
+// ============================================================
+function renderTrends(daily) {
+  // Overview mini version
+  const overCtx = document.getElementById('trendsChart');
+  if (charts.overviewTrends) charts.overviewTrends.destroy();
+  if (overCtx) {
+    charts.overviewTrends = new Chart(overCtx.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: daily.map(d => d.date),
+        datasets: [
+          { label: 'Applied', data: daily.map(d => d.applied), borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,0.06)', fill: true, tension: 0.4, pointRadius: 2.5, pointBackgroundColor: '#34d399' },
+          { label: 'Scraped', data: daily.map(d => d.scraped), borderColor: '#38bdf8', backgroundColor: 'rgba(56,189,248,0.06)', fill: true, tension: 0.4, pointRadius: 2.5, pointBackgroundColor: '#38bdf8' },
+          { label: 'Flagged', data: daily.map(d => d.flagged), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.06)', fill: true, tension: 0.4, pointRadius: 2.5, pointBackgroundColor: '#f59e0b' },
+        ],
+      },
+      options: {
+        maintainAspectRatio: false,
+        responsive: true, plugins: { legend: { labels: { color: 'rgba(240,240,242,0.55)', boxWidth: 10, padding: 14, font: { size: 11.5 } } } },
+        scales: {
+          x: { ticks: { color: 'rgba(240,240,242,0.4)', maxRotation: 45 }, grid: { color: 'rgba(255,255,255,0.03)' } },
+          y: { beginAtZero: true, ticks: { color: 'rgba(240,240,242,0.4)' }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        },
+      },
+    });
+  }
+
+  // Full Trends page
+  const fullCtx = document.getElementById('trendsFullChart');
+  if (charts.fullTrends) charts.fullTrends.destroy();
+  if (fullCtx) {
+    charts.fullTrends = new Chart(fullCtx.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: daily.map(d => d.date),
+        datasets: [
+          { label: 'Applied', data: daily.map(d => d.applied), borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,0.06)', fill: true, tension: 0.35, pointRadius: 3, pointBackgroundColor: '#34d399', borderWidth: 2 },
+          { label: 'Scraped', data: daily.map(d => d.scraped), borderColor: '#38bdf8', backgroundColor: 'rgba(56,189,248,0.06)', fill: true, tension: 0.35, pointRadius: 3, pointBackgroundColor: '#38bdf8', borderWidth: 2 },
+          { label: 'Flagged', data: daily.map(d => d.flagged), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.06)', fill: true, tension: 0.35, pointRadius: 3, pointBackgroundColor: '#f59e0b', borderWidth: 2 },
+        ],
+      },
+      options: {
+        maintainAspectRatio: false,
+        responsive: true,
+        plugins: { legend: { labels: { color: 'rgba(240,240,242,0.55)', boxWidth: 12, padding: 16, font: { size: 12 } } } },
+        scales: {
+          x: { ticks: { color: 'rgba(240,240,242,0.4)', maxRotation: 45 }, grid: { color: 'rgba(255,255,255,0.03)' } },
+          y: { beginAtZero: true, ticks: { color: 'rgba(240,240,242,0.4)' }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        },
+      },
+    });
+  }
+}
+
+// ============================================================
+//  RENDER: Bar Charts (Roles / Companies / Locations)
+// ============================================================
+function renderBars(containerId, key, rows, color, filterKey) {
+  const wrap = document.getElementById(containerId);
+  if (charts[key]) { charts[key].destroy(); delete charts[key]; }
+  if (!rows.length) { wrap.innerHTML = '<div class="empty-note">No data yet.</div>'; return; }
+  wrap.innerHTML = '';
+  const box = document.createElement('div');
+  box.className = 'chart-box';
+  box.style.height = Math.min(460, Math.max(220, rows.length * 30)) + 'px';
+  const c = document.createElement('canvas');
+  box.appendChild(c);
+  wrap.appendChild(box);
+
+  charts[key] = new Chart(c.getContext('2d'), {
+    type: 'bar',
+    data: { labels: rows.map(r => r.label), datasets: [{ data: rows.map(r => r.value), backgroundColor: color, borderRadius: 5, barThickness: 18 }] },
+    options: {
+      maintainAspectRatio: false,
+      indexAxis: 'y',
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: 'rgba(240,240,242,0.4)' } },
+        y: { grid: { display: false }, ticks: { color: 'rgba(240,240,242,0.6)', font: { size: 11 } } },
+      },
+      onClick: (evt, elements) => {
+        if (!elements.length) return;
+        const idx = elements[0].index;
+        const label = rows[idx].label;
+        const dim = {};
+        dim[filterKey] = label;
+        openJobPanel(label, jobPanelUrl({ collection: 'pending_jobs' }, dim));
+      },
+    },
+  });
+}
+
+// ============================================================
+//  SLIDE-OUT JOB PANEL
+// ============================================================
+let panelJobs = [];
+let panelPage = 1;
+let panelTotalPages = 1;
+let panelBaseUrl = '';
+
+function openJobPanel(title, url) {
+  panelJobs = []; panelPage = 1; panelBaseUrl = url;
+  document.getElementById('panelTitle').textContent = title;
+  document.getElementById('panelCount').textContent = '';
+  document.getElementById('panelBody').innerHTML = '<div class="panel-loading"><div class="spinner"></div><p style="margin-top:10px">Loading jobs…</p></div>';
+  document.getElementById('loadMore').disabled = true;
+  document.getElementById('jobPanel').classList.add('open');
+  document.getElementById('panelOverlay').classList.add('open');
+  fetchJobs(url);
+}
+
+function closeJobPanel() {
+  document.getElementById('jobPanel').classList.remove('open');
+  document.getElementById('panelOverlay').classList.remove('open');
+}
+
+async function fetchJobs(url) {
+  try {
+    const sep = url.includes('?') ? '&' : '?';
+    const data = await getJSON(url + sep + 'page=' + panelPage);
+    panelJobs = panelJobs.concat(data.jobs);
+    panelTotalPages = data.pages;
+    document.getElementById('panelCount').textContent = data.total + ' jobs';
+    renderJobCards();
+    const loadMoreBtn = document.getElementById('loadMore');
+    loadMoreBtn.disabled = panelPage >= panelTotalPages;
+    loadMoreBtn.textContent = panelPage >= panelTotalPages ? 'All loaded' : 'Load More';
+  } catch (err) {
+    document.getElementById('panelBody').innerHTML = '<div class="empty-note">Failed to load: ' + esc(err.message) + '</div>';
+  }
+}
+
+function renderJobCards() {
+  const body = document.getElementById('panelBody');
+  if (!panelJobs.length) { body.innerHTML = '<div class="empty-note">No jobs match the current filters.</div>'; return; }
+  body.innerHTML = panelJobs.map(j => {
+    const disp = j.status === 'already_applied' ? 'applied' : (j.status || 'pending');
+    const badgeClass = 'badge-' + disp;
+    const statusLabel = disp.replace(/_/g, ' ');
+    const dateStr = j.date ? j.date.split(' ')[0] : '';
+    let reasonHtml = '';
+    if (j.review_question) {
+      reasonHtml = '<div class="reason"><b>Needs review:</b> ' + esc(j.review_question) + '</div>';
+    } else if (j.reason) {
+      const ic = j.status === 'skipped' ? '⏭' : j.status === 'pending' ? '⏳' : j.status === 'apply_manually' ? '🌐' : '💬';
+      reasonHtml = '<div class="reason">' + ic + ' ' + esc(j.reason) + '</div>';
+    }
+    return '<div class="job-card">' +
+      '<div class="title">' + esc(j.title) + '</div>' +
+      '<div class="company">' + esc(j.company) + '</div>' +
+      '<div class="meta-row">' +
+        '<span>📍 ' + esc(j.location) + '</span>' +
+        (j.role ? '<span>🏷 ' + esc(j.role) + '</span>' : '') +
+        (dateStr ? '<span>📅 ' + dateStr + '</span>' : '') +
+      '</div>' +
+      '<div class="meta-row">' +
+        '<span class="badge ' + badgeClass + '">' + statusLabel + '</span>' +
+        (j.link ? '<a href="' + esc(j.link) + '" target="_blank" rel="noopener">View on Naukri →</a>' : '') +
+      '</div>' +
+      reasonHtml +
+    '</div>';
+  }).join('');
+}
+
+// ============================================================
+//  FILTER LOAD + CLEAR
+// ============================================================
+async function loadFilters() {
+  try {
+    const f = await getJSON('/api/filters');
+    roleFC.setOptions(f.roles);
+    companyFC.setOptions(f.companies);
+    locationFC.setOptions(f.locations);
+    // from/to are intentionally left EMPTY on load: the default view is the
+    // OVERALL numbers, and the date range only kicks in once the user picks a
+    // From/To. (Pre-filling them with the daily_stats range used to silently
+    // truncate Applied/Scraped to just the funnel-tracked days.)
+  } catch (err) { /* optional */ }
+}
+
+function clearFilters() {
+  roleFC.clear(); companyFC.clear(); locationFC.clear();
+  document.getElementById('filterFrom').value = '';
+  document.getElementById('filterTo').value = '';
+  updateTodayBtnState();
+  loadAll(); updateFilterBanner();
+}
+
+function updateFilterBanner() {
+  const chips = [];
+  const r = roleFC.selectedValues(); if (r.length) chips.push('Role: ' + r.join(', '));
+  const c = companyFC.selectedValues(); if (c.length) chips.push('Company: ' + c.join(', '));
+  const l = locationFC.selectedValues(); if (l.length) chips.push('Location: ' + l.join(', '));
+  const from = document.getElementById('filterFrom').value;
+  const to = document.getElementById('filterTo').value;
+  if (from || to) {
+    const t = istToday();
+    chips.push(from === to && from === t
+      ? 'Date: Today (' + t + ')'
+      : 'Date: ' + (from || '…') + ' → ' + (to || '…'));
+  }
+  const banner = document.getElementById('filterBanner');
+  const chipBox = document.getElementById('filterChips');
+  updateTodayBtnState();
+  if (!chips.length) { banner.classList.remove('show'); chipBox.innerHTML = ''; return; }
+  chipBox.innerHTML = chips.map(ch => '<span class="fb-chip">' + esc(ch) + '</span>').join(' ');
+  banner.classList.add('show');
+}
+
+function onFilterChange() { loadAll(); updateFilterBanner(); }
+
+// ============================================================
+//  MAIN LOAD
+// ============================================================
+async function loadAll() {
+  try {
+    const q = filterQueryString() ? '?' + filterQueryString() : '';
+    const [summary, daily, funnel, breakdown] = await Promise.all([
+      getJSON('/api/summary' + q), getJSON('/api/daily' + q), getJSON('/api/funnel'), getJSON('/api/breakdown' + q),
+    ]);
+    renderKpis(summary);
+    renderFunnel(funnel, 'funnel-wrap');
+    renderFunnel(funnel, 'funnel-wrap-p');
+    renderStatus(breakdown.status);
+    renderDailyApplied(daily);
+    renderTrends(daily);
+    renderBars('roles-wrap', 'roles', breakdown.roles, 'rgba(96,165,250,0.7)', 'role');
+    renderBars('companies-wrap', 'companies', breakdown.companies, 'rgba(52,211,153,0.7)', 'company');
+    renderBars('locations-wrap', 'locations', breakdown.locations, 'rgba(56,189,248,0.7)', 'location');
+    document.getElementById('updated').textContent = 'Last updated ' + new Date().toLocaleString();
+  } catch (err) {
+    document.getElementById('updated').textContent = '⚠ Failed: ' + err.message;
+  }
+}
+
+// ============================================================
+//  EVENT LISTENERS
+// ============================================================
+document.getElementById('refreshBtn').addEventListener('click', loadAll);
+document.getElementById('clearFilters').addEventListener('click', clearFilters);
+document.getElementById('filterToday').addEventListener('click', setTodayFilter);
+document.getElementById('closePanel').addEventListener('click', closeJobPanel);
+document.getElementById('panelOverlay').addEventListener('click', closeJobPanel);
+document.getElementById('loadMore').addEventListener('click', () => { panelPage++; fetchJobs(panelBaseUrl); });
+document.getElementById('fbClear').addEventListener('click', clearFilters);
+['filterFrom', 'filterTo'].forEach(id => {
+  document.getElementById(id).addEventListener('change', onFilterChange);
+});
+
+// ============================================================
+//  INIT
+// ============================================================
+roleFC = createFilterChip('fcRole', 'All Roles', onFilterChange);
+companyFC = createFilterChip('fcCompany', 'All Companies', onFilterChange);
+locationFC = createFilterChip('fcLocation', 'All Locations', onFilterChange);
+loadFilters();
+loadAll();
+setInterval(loadAll, 300000); // auto-refresh every 5 min
+</script>
+</body>
+</html>
