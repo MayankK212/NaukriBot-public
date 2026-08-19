@@ -15,6 +15,7 @@
   "highest_education": "B.Tech",
   "ug_degree": "B.Tech",
   "date_of_birth": "DD/MM/YYYY",
+  "passport": "Yes",
   "languages": ["English", "Hindi"],
   "communication_skills_scale_of_10": 8
 }
