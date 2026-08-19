@@ -1,8 +1,12 @@
 # ---- SECRETS / PERSONAL: never commit these ----
+# NOTE: no trailing comments on these lines. In .gitignore a '#' only starts a
+# comment at the START of a line -- written after a pattern it becomes part of
+# the pattern, so the rule silently matches nothing. That exact mistake is how
+# resume_data.json ended up committed despite "being ignored".
 .env
 cookies.json
-resume_data.json          # your real profile (use resume_data.example.json as template)
-my_resume.pdf
+# your real profile (resume_data.example.json is the template that IS committed)
+resume_data.json
 *.pdf
 
 # Python
